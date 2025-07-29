@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <errno.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,6 +9,8 @@
 #include <unistd.h>
 
 #define TEXTER_VERSION "0.0.1"
+#define KILOBYTES(i) ((i) * 1024)
+#define MEGABYTES(i) (KILOBYTES((i)) * 1024)
 
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define CLEAR_SCREEN ("\x1b[2J")
@@ -22,11 +25,19 @@ struct GlobalState
 
 static struct GlobalState G;
 
+struct EdRow
+{
+    int size;
+    char* buf;
+};
+
 struct EditorContext
 {
     int cx, cy;
     int rows;
     int cols;
+    int n_rows;
+    struct EdRow* erow;
 };
 
 /**** libc wrappers *****/
@@ -57,6 +68,15 @@ Tcsetattr(int __fd, int optional, struct termios* tios)
 }
 
 void*
+Malloc(size_t size)
+{
+    void* ptr = malloc(size);
+    if (!ptr) {
+        unix_error("malloc");
+    }
+    return ptr;
+}
+void*
 Calloc(size_t count, size_t size)
 {
     void* ptr = calloc(count, size);
@@ -71,9 +91,18 @@ Realloc(void* ptr, size_t size)
 {
     void* new_ptr = realloc(ptr, size);
     if (!new_ptr) {
-        unix_error("Realloc");
+        unix_error("realloc");
     }
     return new_ptr;
+}
+FILE*
+Fopen(char* file, char* opts)
+{
+    FILE* fd = fopen(file, opts);
+    if (!fd) {
+        unix_error("fopen");
+    }
+    return fd;
 }
 /**** mem *****/
 struct Arena
@@ -320,25 +349,44 @@ window_size(int* rows, int* cols)
 }
 
 void
+append_row(struct EditorContext* ctx, char* s, size_t len)
+{
+    ctx->erow = realloc(ctx->erow, sizeof(*ctx->erow) * (ctx->n_rows + 1));
+    int at = ctx->n_rows;
+    ctx->erow[at].size = len;
+    ctx->erow[at].buf = Malloc(len + 1);
+    memcpy(ctx->erow[at].buf, s, len);
+    ctx->erow[at].buf[len] = '\0';
+    ctx->n_rows++;
+}
+void
 draw_rows(struct EditorContext* ctx, struct Abuf* ab)
 {
     for (unsigned y = 0; y < ctx->rows; y++) {
-        if (y == (ctx->rows / 3)) {
-            const char welcome[] =
-              "Tutorial text-editor -- version " TEXTER_VERSION;
-            size_t welcome_len = sizeof(welcome);
-            int padding = (ctx->cols - welcome_len) / 2;
-            if (padding) {
+        if (y >= ctx->n_rows) {
+            if (ctx->n_rows == 0 && y == (ctx->rows / 3)) {
+                const char welcome[] =
+                  "Tutorial text-editor -- version " TEXTER_VERSION;
+                size_t welcome_len = sizeof(welcome);
+                int padding = (ctx->cols - welcome_len) / 2;
+                if (padding) {
+                    Abuf_append(ab, "~", 1);
+                    padding--;
+                }
+                while (padding) {
+                    Abuf_append(ab, " ", 1);
+                    padding--;
+                }
+                Abuf_append(ab, welcome, welcome_len);
+            } else {
                 Abuf_append(ab, "~", 1);
-                padding--;
             }
-            while (padding) {
-                Abuf_append(ab, " ", 1);
-                padding--;
-            }
-            Abuf_append(ab, welcome, welcome_len);
         } else {
-            Abuf_append(ab, "~", 1);
+            int len = ctx->erow[y].size;
+            if (len > ctx->cols) {
+                len = ctx->cols;
+            }
+            Abuf_append(ab, ctx->erow[y].buf, len);
         }
         Abuf_append(ab, ERASE_LINE, sizeof(ERASE_LINE));
         if (y < ctx->rows - 1) {
@@ -372,9 +420,27 @@ init_editor(struct EditorContext* ctx)
 {
     ctx->cx = 0;
     ctx->cy = 0;
-
+    ctx->n_rows = 0;
+    ctx->erow = NULL;
     if (window_size(&ctx->rows, &ctx->cols) == -1) {
         unix_error("init window");
+    }
+}
+
+/***** file i/o *****/
+void
+file_open(struct EditorContext* ctx, struct Arena* arena, char* filename)
+{
+    FILE* fd = Fopen(filename, "r");
+    char* line = NULL;
+    size_t line_cap = 0;
+    size_t line_len;
+    while ((line_len = getline(&line, &line_cap, fd)) != -1) {
+        while (line_len > 0 &&
+               (line[line_len - 1] == '\n' || line[line_len - 1] == '\r')) {
+            line_len--;
+        }
+        append_row(ctx, line, line_len);
     }
 }
 
@@ -382,10 +448,13 @@ init_editor(struct EditorContext* ctx)
 int
 main(int argc, char* argv[])
 {
-    struct Arena* arena = Arena_new(4096);
+    struct Arena* arena = Arena_new(MEGABYTES((size_t)2));
     struct EditorContext* ctx = Arena_alloc(arena, sizeof(*ctx));
     enable_raw_mode();
     init_editor(ctx);
+    if (argc > 1) {
+        file_open(ctx, arena, argv[1]);
+    }
     atexit(disable_raw_mode);
 
     while (1) {
