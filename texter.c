@@ -147,7 +147,20 @@ Abuf_free(struct Abuf* ab)
 
 /***** input *****/
 
-char
+enum EditorKey
+{
+    UP = 1000,
+    DOWN,
+    LEFT,
+    RIGHT,
+    HOME,
+    END,
+    PG_UP,
+    PG_DWN,
+    DEL
+};
+
+int
 read_key(void)
 {
     int nread;
@@ -157,32 +170,126 @@ read_key(void)
             unix_error("read");
         }
     }
-    return c;
+    if (c == '\x1b') {
+        char seq[3];
+        if (read(STDIN_FILENO, seq, 1) != 1)
+            return '\x1b';
+        if (read(STDIN_FILENO, seq + 1, 1) != 1)
+            return '\x1b';
+        if (seq[0] == '[') {
+            if (seq[1] >= '0' && seq[1] <= '9') {
+                if (read(STDIN_FILENO, seq + 2, 1) != 1)
+                    return '\x1b';
+                if (seq[2] == '~') {
+                    switch (seq[1]) {
+                        case '1':
+                            return HOME;
+                        case '3':
+                            return DEL;
+                        case '4':
+                            return END;
+                        case '5':
+                            return PG_UP;
+                        case '6':
+                            return PG_DWN;
+                        case '7':
+                            return HOME;
+                        case '8':
+                            return END;
+                        default:
+                            return '\x1b';
+                    }
+                } else {
+                    return '\x1b';
+                }
+            } else {
+                switch (seq[1]) {
+                    case 'A':
+                        return UP;
+                    case 'B':
+                        return DOWN;
+                    case 'C':
+                        return RIGHT;
+                    case 'D':
+                        return LEFT;
+                    case 'H':
+                        return HOME;
+                    case 'F':
+                        return END;
+                    default:
+                        return '\x1b';
+                }
+            }
+        } else if (seq[0] == 'O') {
+            switch (seq[1]) {
+                case 'H':
+                    return HOME;
+                case 'F':
+                    return END;
+                default:
+                    return '\x1b';
+            }
+        } else {
+            return '\x1b';
+        }
+    } else {
+        return c;
+    }
 }
 
 void
-handle_input(struct EditorContext* ctx, char c)
+handle_cursor_mov(struct EditorContext* ctx, int key)
 {
-    switch (c) {
-        case 'h':
+    switch (key) {
+        case LEFT:
             ctx->cx--;
+            break;
+        case RIGHT:
+            ctx->cx++;
+            break;
+        case UP:
+            ctx->cy--;
+            break;
+        case DOWN:
+            ctx->cy++;
+            break;
+        case HOME:
+            ctx->cy = 0;
+            break;
+        case END:
+            ctx->cy = ctx->rows - 1;
+            break;
+        case PG_UP:
+            ctx->cy -= ctx->rows;
+            break;
+        case PG_DWN:
+            ctx->cy += ctx->rows;
+            break;
             if (ctx->cx < 0)
                 ctx->cx = 0;
-            break;
-        case 'l':
-            ctx->cx++;
-            if (ctx->cx > ctx->cols)
+            else if (ctx->cx > ctx->cols)
                 ctx->cx = ctx->cols;
-            break;
-        case 'k':
-            ctx->cy--;
-            if (ctx->cy < 0)
+            else if (ctx->cy < 0)
                 ctx->cy = 0;
-            break;
-        case 'j':
-            ctx->cy++;
-            if (ctx->cy > ctx->rows)
-                ctx->cy = ctx->rows;
+            else if (ctx->cy >= ctx->rows)
+                ctx->cy = ctx->rows - 1;
+    }
+}
+
+void
+handle_input(struct EditorContext* ctx, int key)
+{
+    switch (key) {
+        case LEFT:
+        case RIGHT:
+        case UP:
+        case DOWN:
+        case PG_DWN:
+        case PG_UP:
+        case END:
+        case HOME:
+        case DEL:
+            handle_cursor_mov(ctx, key);
             break;
         case CTRL_KEY('q'):
             exit(0);
@@ -283,8 +390,8 @@ main(int argc, char* argv[])
 
     while (1) {
         refresh_ui(ctx);
-        char c = read_key();
-        handle_input(ctx, c);
+        int key = read_key();
+        handle_input(ctx, key);
     }
     return EXIT_SUCCESS;
 }
