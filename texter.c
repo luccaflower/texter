@@ -34,8 +34,9 @@ struct EdRow
 struct EditorContext
 {
     int cx, cy;
-    int rows;
-    int cols;
+    int row_offset, col_offset;
+    int screenrows;
+    int screencols;
     int n_rows;
     struct EdRow* erow;
 };
@@ -178,37 +179,41 @@ handle_cursor_mov(struct EditorContext* ctx, int key)
 {
     switch (key) {
         case LEFT:
-            ctx->cx--;
+            if (ctx->cx > 0) {
+                ctx->cx--;
+            }
             break;
         case RIGHT:
             ctx->cx++;
             break;
         case UP:
-            ctx->cy--;
+            if (ctx->cy > 0) {
+                ctx->cy--;
+            }
             break;
         case DOWN:
-            ctx->cy++;
+            if (ctx->cy < ctx->n_rows) {
+                ctx->cy++;
+            }
             break;
         case HOME:
             ctx->cy = 0;
             break;
         case END:
-            ctx->cy = ctx->rows - 1;
+            ctx->cy = ctx->n_rows - 1;
             break;
         case PG_UP:
-            ctx->cy -= ctx->rows;
+            ctx->cy -= ctx->screenrows;
+            if (ctx->cy < 0) {
+                ctx->cy = 0;
+            }
             break;
         case PG_DWN:
-            ctx->cy += ctx->rows;
+            ctx->cy += ctx->screenrows;
+            if (ctx->cy > ctx->n_rows) {
+                ctx->cy = ctx->n_rows;
+            }
             break;
-            if (ctx->cx < 0)
-                ctx->cx = 0;
-            else if (ctx->cx > ctx->cols)
-                ctx->cx = ctx->cols;
-            else if (ctx->cy < 0)
-                ctx->cy = 0;
-            else if (ctx->cy >= ctx->rows)
-                ctx->cy = ctx->rows - 1;
     }
 }
 
@@ -266,16 +271,33 @@ append_row(struct EditorContext* ctx, char* s, size_t len)
     ctx->erow[at].buf[len] = '\0';
     ctx->n_rows++;
 }
+
+void
+editor_scroll(struct EditorContext* ctx)
+{
+    if (ctx->cy < ctx->row_offset) {
+        ctx->row_offset = ctx->cy;
+    } else if (ctx->cy >= ctx->row_offset + ctx->screenrows) {
+        ctx->row_offset = ctx->cy - ctx->screenrows + 1;
+    }
+    if (ctx->cx < ctx->col_offset) {
+        ctx->col_offset = ctx->cx;
+    } else if (ctx->cx >= ctx->col_offset + ctx->screencols) {
+        ctx->col_offset = ctx->cx + ctx->screencols + 1;
+    }
+}
+
 void
 draw_rows(struct EditorContext* ctx, struct Abuf* ab)
 {
-    for (unsigned y = 0; y < ctx->rows; y++) {
-        if (y >= ctx->n_rows) {
-            if (ctx->n_rows == 0 && y == (ctx->rows / 3)) {
+    for (unsigned y = 0; y < ctx->screenrows; y++) {
+        int filerow = y + ctx->row_offset;
+        if (filerow >= ctx->n_rows) {
+            if (ctx->n_rows == 0 && y == (ctx->screenrows / 3)) {
                 const char welcome[] =
                   "Tutorial text-editor -- version " TEXTER_VERSION;
                 size_t welcome_len = sizeof(welcome);
-                int padding = (ctx->cols - welcome_len) / 2;
+                int padding = (ctx->screencols - welcome_len) / 2;
                 if (padding) {
                     Abuf_append(ab, "~", 1);
                     padding--;
@@ -289,14 +311,17 @@ draw_rows(struct EditorContext* ctx, struct Abuf* ab)
                 Abuf_append(ab, "~", 1);
             }
         } else {
-            int len = ctx->erow[y].size;
-            if (len > ctx->cols) {
-                len = ctx->cols;
+            int len = ctx->erow[filerow].size - ctx->col_offset;
+            if (len < 0) {
+                len = 0;
             }
-            Abuf_append(ab, ctx->erow[y].buf, len);
+            if (len > ctx->screencols) {
+                len = ctx->screencols;
+            }
+            Abuf_append(ab, &ctx->erow[filerow].buf[ctx->col_offset], len);
         }
         Abuf_append(ab, ERASE_LINE, sizeof(ERASE_LINE));
-        if (y < ctx->rows - 1) {
+        if (y < ctx->screenrows - 1) {
             Abuf_append(ab, "\r\n", 2);
         }
     }
@@ -306,13 +331,18 @@ void
 place_cursor(struct EditorContext* ctx, struct Abuf* ab)
 {
     char buf[32];
-    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", ctx->cy + 1, ctx->cx + 1);
+    snprintf(buf,
+             sizeof(buf),
+             "\x1b[%d;%dH",
+             (ctx->cy - ctx->row_offset) + 1,
+             (ctx->cx - ctx->col_offset) + 1);
     Abuf_append(ab, buf, strlen(buf));
 }
 
 void
 refresh_ui(struct EditorContext* ctx)
 {
+    editor_scroll(ctx);
     struct Abuf ab = { .b = NULL, .len = 0 };
     Abuf_append(&ab, RESET_CURSOR, sizeof(RESET_CURSOR));
     draw_rows(ctx, &ab);
@@ -327,9 +357,11 @@ init_editor(struct EditorContext* ctx)
 {
     ctx->cx = 0;
     ctx->cy = 0;
+    ctx->row_offset = 0;
+    ctx->col_offset = 0;
     ctx->n_rows = 0;
     ctx->erow = NULL;
-    if (window_size(&ctx->rows, &ctx->cols) == -1) {
+    if (window_size(&ctx->screenrows, &ctx->screencols) == -1) {
         unix_error("init window");
     }
 }
