@@ -1,6 +1,10 @@
 CFLAGS=-O0 -g -Wall -Werror
+PROG = texter
+OBJ = texter.o \
+	  util.o \
+	  mem.o
 
-texter: texter.c
+$(PROG): $(OBJ)
 
 .PHONY: clean
 clean:

@@ -1,3 +1,5 @@
+#include "mem.h"
+#include "util.h"
 #include <assert.h>
 #include <errno.h>
 #include <stddef.h>
@@ -9,8 +11,6 @@
 #include <unistd.h>
 
 #define TEXTER_VERSION "0.0.1"
-#define KILOBYTES(i) ((i) * 1024)
-#define MEGABYTES(i) (KILOBYTES((i)) * 1024)
 
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define CLEAR_SCREEN ("\x1b[2J")
@@ -39,99 +39,6 @@ struct EditorContext
     int n_rows;
     struct EdRow* erow;
 };
-
-/**** libc wrappers *****/
-void
-unix_error(const char* msg)
-{
-    write(STDOUT_FILENO, CLEAR_SCREEN, 4);
-    write(STDOUT_FILENO, RESET_CURSOR, 3);
-    perror(msg);
-    exit(1);
-}
-
-void
-Tcgetattr(int __fd, struct termios* tios)
-{
-    if (tcgetattr(STDIN_FILENO, tios) < 0) {
-        unix_error("tcgetattr");
-    }
-}
-
-void
-Tcsetattr(int __fd, int optional, struct termios* tios)
-{
-
-    if (tcsetattr(STDIN_FILENO, optional, tios) < 0) {
-        unix_error("tcsetattr");
-    }
-}
-
-void*
-Malloc(size_t size)
-{
-    void* ptr = malloc(size);
-    if (!ptr) {
-        unix_error("malloc");
-    }
-    return ptr;
-}
-void*
-Calloc(size_t count, size_t size)
-{
-    void* ptr = calloc(count, size);
-    if (!ptr) {
-        unix_error("calloc");
-    }
-    return ptr;
-}
-
-void*
-Realloc(void* ptr, size_t size)
-{
-    void* new_ptr = realloc(ptr, size);
-    if (!new_ptr) {
-        unix_error("realloc");
-    }
-    return new_ptr;
-}
-FILE*
-Fopen(char* file, char* opts)
-{
-    FILE* fd = fopen(file, opts);
-    if (!fd) {
-        unix_error("fopen");
-    }
-    return fd;
-}
-/**** mem *****/
-struct Arena
-{
-    size_t max;
-    size_t allocated;
-    void* base;
-};
-
-struct Arena*
-Arena_new(size_t capacity)
-{
-    struct Arena* arena = Calloc(1, sizeof(struct Arena) + capacity);
-    arena->base = (void*)(arena + 1);
-    arena->max = capacity;
-    arena->allocated = 0;
-    return arena;
-}
-
-void*
-Arena_alloc(struct Arena* arena, size_t size)
-{
-    size = (size + 7) & ~7; // align to 8 bytes
-    assert(arena->allocated + size < arena->max);
-    void* ptr = arena->base;
-    arena->base += size;
-    arena->allocated += size;
-    return ptr;
-}
 
 /**** terminal *****/
 
@@ -429,7 +336,7 @@ init_editor(struct EditorContext* ctx)
 
 /***** file i/o *****/
 void
-file_open(struct EditorContext* ctx, struct Arena* arena, char* filename)
+file_open(struct EditorContext* ctx, struct BumpAlloc* arena, char* filename)
 {
     FILE* fd = Fopen(filename, "r");
     char* line = NULL;
@@ -448,8 +355,8 @@ file_open(struct EditorContext* ctx, struct Arena* arena, char* filename)
 int
 main(int argc, char* argv[])
 {
-    struct Arena* arena = Arena_new(MEGABYTES((size_t)2));
-    struct EditorContext* ctx = Arena_alloc(arena, sizeof(*ctx));
+    struct BumpAlloc* arena = Bump_new(MEGABYTES((size_t)2));
+    struct EditorContext* ctx = Bump_alloc(arena, sizeof(*ctx));
     enable_raw_mode();
     init_editor(ctx);
     if (argc > 1) {
