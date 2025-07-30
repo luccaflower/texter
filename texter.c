@@ -17,6 +17,7 @@
 #define RESET_CURSOR ("\x1b[H")
 #define BLINK_CURSOR ("\x1b[?25h")
 #define ERASE_LINE ("\x1b[K")
+#define TABWIDTH (4)
 
 struct GlobalState
 {
@@ -28,12 +29,15 @@ static struct GlobalState G;
 struct EdRow
 {
     int size;
+    int r_size;
     char* buf;
+    char* render;
 };
 
 struct EditorContext
 {
     int cx, cy;
+    int rx;
     int row_offset, col_offset;
     int screenrows;
     int screencols;
@@ -177,14 +181,23 @@ read_key(void)
 void
 handle_cursor_mov(struct EditorContext* ctx, int key)
 {
+    struct EdRow* row = (ctx->cy >= ctx->n_rows) ? NULL : &ctx->erow[ctx->cy];
     switch (key) {
         case LEFT:
             if (ctx->cx > 0) {
                 ctx->cx--;
+            } else if (ctx->cy > 0) {
+                ctx->cy--;
+                ctx->cx = ctx->erow[ctx->cy].size;
             }
             break;
         case RIGHT:
-            ctx->cx++;
+            if (row && ctx->cx < row->size) {
+                ctx->cx++;
+            } else if (row && ctx->cx >= row->size) {
+                ctx->cy++;
+                ctx->cx = 0;
+            }
             break;
         case UP:
             if (ctx->cy > 0) {
@@ -214,6 +227,11 @@ handle_cursor_mov(struct EditorContext* ctx, int key)
                 ctx->cy = ctx->n_rows;
             }
             break;
+    }
+    row = (ctx->cy >= ctx->n_rows) ? NULL : &ctx->erow[ctx->cy];
+    int rowlen = row ? row->size : 0;
+    if (ctx->cx > rowlen) {
+        ctx->cx = rowlen;
     }
 }
 
@@ -261,6 +279,30 @@ window_size(int* rows, int* cols)
 }
 
 void
+update_row(struct EdRow* row)
+{
+    int tabs = 0;
+    for (int i = 0; i < row->size; i++) {
+        if (row->buf[i] == '\t') {
+            tabs++;
+        }
+    }
+    free(row->render);
+    int tab_chars = tabs * TABWIDTH;
+    row->render = Malloc(row->size + tab_chars + 1);
+    int i = 0;
+    for (int j = 0; j < row->size; j++) {
+        if (row->buf[j] == '\t') {
+            i += snprintf(row->render + i, TABWIDTH + 1, "%*c", TABWIDTH, ' ');
+        } else {
+            row->render[i] = row->buf[j];
+            i++;
+        }
+    }
+    row->r_size = i;
+}
+
+void
 append_row(struct EditorContext* ctx, char* s, size_t len)
 {
     ctx->erow = realloc(ctx->erow, sizeof(*ctx->erow) * (ctx->n_rows + 1));
@@ -269,21 +311,44 @@ append_row(struct EditorContext* ctx, char* s, size_t len)
     ctx->erow[at].buf = Malloc(len + 1);
     memcpy(ctx->erow[at].buf, s, len);
     ctx->erow[at].buf[len] = '\0';
+
+    ctx->erow[at].r_size = 0;
+    ctx->erow[at].render = NULL;
+    update_row(&ctx->erow[at]);
+
     ctx->n_rows++;
+}
+
+int
+row_cx_to_rx(struct EdRow* row, int cx)
+{
+    int rx = 0;
+    for (int i = 0; i < cx; i++) {
+        if (row->buf[i] == '\t') {
+            rx += TABWIDTH - (rx % TABWIDTH);
+        } else {
+            rx++;
+        }
+    }
+    return rx;
 }
 
 void
 editor_scroll(struct EditorContext* ctx)
 {
+    ctx->rx = 0;
+    if (ctx->cy < ctx->n_rows) {
+        ctx->rx = row_cx_to_rx(&ctx->erow[ctx->cy], ctx->cx);
+    }
     if (ctx->cy < ctx->row_offset) {
         ctx->row_offset = ctx->cy;
     } else if (ctx->cy >= ctx->row_offset + ctx->screenrows) {
         ctx->row_offset = ctx->cy - ctx->screenrows + 1;
     }
-    if (ctx->cx < ctx->col_offset) {
-        ctx->col_offset = ctx->cx;
-    } else if (ctx->cx >= ctx->col_offset + ctx->screencols) {
-        ctx->col_offset = ctx->cx + ctx->screencols + 1;
+    if (ctx->rx < ctx->col_offset) {
+        ctx->col_offset = ctx->rx;
+    } else if (ctx->rx >= ctx->col_offset + ctx->screencols) {
+        ctx->col_offset = ctx->rx + ctx->screencols + 1;
     }
 }
 
@@ -311,14 +376,14 @@ draw_rows(struct EditorContext* ctx, struct Abuf* ab)
                 Abuf_append(ab, "~", 1);
             }
         } else {
-            int len = ctx->erow[filerow].size - ctx->col_offset;
+            int len = ctx->erow[filerow].r_size - ctx->col_offset;
             if (len < 0) {
                 len = 0;
             }
             if (len > ctx->screencols) {
                 len = ctx->screencols;
             }
-            Abuf_append(ab, &ctx->erow[filerow].buf[ctx->col_offset], len);
+            Abuf_append(ab, &ctx->erow[filerow].render[ctx->col_offset], len);
         }
         Abuf_append(ab, ERASE_LINE, sizeof(ERASE_LINE));
         if (y < ctx->screenrows - 1) {
@@ -335,7 +400,7 @@ place_cursor(struct EditorContext* ctx, struct Abuf* ab)
              sizeof(buf),
              "\x1b[%d;%dH",
              (ctx->cy - ctx->row_offset) + 1,
-             (ctx->cx - ctx->col_offset) + 1);
+             (ctx->rx - ctx->col_offset) + 1);
     Abuf_append(ab, buf, strlen(buf));
 }
 
@@ -357,6 +422,7 @@ init_editor(struct EditorContext* ctx)
 {
     ctx->cx = 0;
     ctx->cy = 0;
+    ctx->rx = 0;
     ctx->row_offset = 0;
     ctx->col_offset = 0;
     ctx->n_rows = 0;
