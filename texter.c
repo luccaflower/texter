@@ -43,6 +43,7 @@ struct EditorContext
     int screencols;
     int n_rows;
     struct EdRow* erow;
+    char* filename;
 };
 
 /**** terminal *****/
@@ -386,9 +387,7 @@ draw_rows(struct EditorContext* ctx, struct Abuf* ab)
             Abuf_append(ab, &ctx->erow[filerow].render[ctx->col_offset], len);
         }
         Abuf_append(ab, ERASE_LINE, sizeof(ERASE_LINE));
-        if (y < ctx->screenrows - 1) {
-            Abuf_append(ab, "\r\n", 2);
-        }
+        Abuf_append(ab, "\r\n", 2);
     }
 }
 
@@ -405,12 +404,37 @@ place_cursor(struct EditorContext* ctx, struct Abuf* ab)
 }
 
 void
+draw_status_bar(struct EditorContext* ctx, struct Abuf* ab)
+{
+    Abuf_append(ab, "\x1b[7m", 4);
+    char status[80], rstatus[80];
+    char* filename = ctx->filename ? ctx->filename : "[No Name]";
+    int len = snprintf(
+      status, sizeof(status), "%.20s - %d lines", filename, ctx->n_rows);
+    int rlen =
+      snprintf(rstatus, sizeof(rstatus), "%d/%d", ctx->cy + 1, ctx->n_rows);
+    if (len > ctx->screencols) {
+        len = ctx->screencols;
+    }
+    Abuf_append(ab, status, len);
+    for (; len < ctx->screencols; len++) {
+        if (ctx->screencols - len == rlen) {
+            Abuf_append(ab, rstatus, rlen);
+            break;
+        }
+        Abuf_append(ab, " ", 1);
+    }
+    Abuf_append(ab, "\x1b[m", 3);
+}
+
+void
 refresh_ui(struct EditorContext* ctx)
 {
     editor_scroll(ctx);
     struct Abuf ab = { .b = NULL, .len = 0 };
     Abuf_append(&ab, RESET_CURSOR, sizeof(RESET_CURSOR));
     draw_rows(ctx, &ab);
+    draw_status_bar(ctx, &ab);
     place_cursor(ctx, &ab);
     Abuf_append(&ab, BLINK_CURSOR, sizeof(BLINK_CURSOR));
     write(STDOUT_FILENO, ab.b, ab.len);
@@ -418,7 +442,7 @@ refresh_ui(struct EditorContext* ctx)
 }
 
 void
-init_editor(struct EditorContext* ctx)
+init_editor(struct EditorContext* ctx, char* filename)
 {
     ctx->cx = 0;
     ctx->cy = 0;
@@ -427,9 +451,11 @@ init_editor(struct EditorContext* ctx)
     ctx->col_offset = 0;
     ctx->n_rows = 0;
     ctx->erow = NULL;
+    ctx->filename = filename;
     if (window_size(&ctx->screenrows, &ctx->screencols) == -1) {
         unix_error("init window");
     }
+    ctx->screenrows -= 2;
 }
 
 /***** file i/o *****/
@@ -456,7 +482,8 @@ main(int argc, char* argv[])
     struct BumpAlloc* arena = Bump_new(MEGABYTES((size_t)2));
     struct EditorContext* ctx = Bump_alloc(arena, sizeof(*ctx));
     enable_raw_mode();
-    init_editor(ctx);
+    // argv is a NULL-terminated array, so this is fine
+    init_editor(ctx, argv[1]);
     if (argc > 1) {
         file_open(ctx, arena, argv[1]);
     }
