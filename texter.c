@@ -2,12 +2,15 @@
 #include "util.h"
 #include <assert.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 #define TEXTER_VERSION "0.0.1"
@@ -42,6 +45,9 @@ struct EditorContext
     int screenrows;
     int screencols;
     int n_rows;
+    int dirty;
+    char status_msg[80];
+    time_t status_time;
     struct EdRow* erow;
     char* filename;
 };
@@ -85,175 +91,6 @@ void
 Abuf_free(struct Abuf* ab)
 {
     free(ab->b);
-}
-
-/***** input *****/
-
-enum EditorKey
-{
-    UP = 1000,
-    DOWN,
-    LEFT,
-    RIGHT,
-    HOME,
-    END,
-    PG_UP,
-    PG_DWN,
-    DEL
-};
-
-int
-read_key(void)
-{
-    int nread;
-    char c;
-    while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
-        if (nread == -1 && errno != EAGAIN) {
-            unix_error("read");
-        }
-    }
-    if (c == '\x1b') {
-        char seq[3];
-        if (read(STDIN_FILENO, seq, 1) != 1)
-            return '\x1b';
-        if (read(STDIN_FILENO, seq + 1, 1) != 1)
-            return '\x1b';
-        if (seq[0] == '[') {
-            if (seq[1] >= '0' && seq[1] <= '9') {
-                if (read(STDIN_FILENO, seq + 2, 1) != 1)
-                    return '\x1b';
-                if (seq[2] == '~') {
-                    switch (seq[1]) {
-                        case '1':
-                            return HOME;
-                        case '3':
-                            return DEL;
-                        case '4':
-                            return END;
-                        case '5':
-                            return PG_UP;
-                        case '6':
-                            return PG_DWN;
-                        case '7':
-                            return HOME;
-                        case '8':
-                            return END;
-                        default:
-                            return '\x1b';
-                    }
-                } else {
-                    return '\x1b';
-                }
-            } else {
-                switch (seq[1]) {
-                    case 'A':
-                        return UP;
-                    case 'B':
-                        return DOWN;
-                    case 'C':
-                        return RIGHT;
-                    case 'D':
-                        return LEFT;
-                    case 'H':
-                        return HOME;
-                    case 'F':
-                        return END;
-                    default:
-                        return '\x1b';
-                }
-            }
-        } else if (seq[0] == 'O') {
-            switch (seq[1]) {
-                case 'H':
-                    return HOME;
-                case 'F':
-                    return END;
-                default:
-                    return '\x1b';
-            }
-        } else {
-            return '\x1b';
-        }
-    } else {
-        return c;
-    }
-}
-
-void
-handle_cursor_mov(struct EditorContext* ctx, int key)
-{
-    struct EdRow* row = (ctx->cy >= ctx->n_rows) ? NULL : &ctx->erow[ctx->cy];
-    switch (key) {
-        case LEFT:
-            if (ctx->cx > 0) {
-                ctx->cx--;
-            } else if (ctx->cy > 0) {
-                ctx->cy--;
-                ctx->cx = ctx->erow[ctx->cy].size;
-            }
-            break;
-        case RIGHT:
-            if (row && ctx->cx < row->size) {
-                ctx->cx++;
-            } else if (row && ctx->cx >= row->size) {
-                ctx->cy++;
-                ctx->cx = 0;
-            }
-            break;
-        case UP:
-            if (ctx->cy > 0) {
-                ctx->cy--;
-            }
-            break;
-        case DOWN:
-            if (ctx->cy < ctx->n_rows) {
-                ctx->cy++;
-            }
-            break;
-        case HOME:
-            ctx->cy = 0;
-            break;
-        case END:
-            ctx->cy = ctx->n_rows - 1;
-            break;
-        case PG_UP:
-            ctx->cy -= ctx->screenrows;
-            if (ctx->cy < 0) {
-                ctx->cy = 0;
-            }
-            break;
-        case PG_DWN:
-            ctx->cy += ctx->screenrows;
-            if (ctx->cy > ctx->n_rows) {
-                ctx->cy = ctx->n_rows;
-            }
-            break;
-    }
-    row = (ctx->cy >= ctx->n_rows) ? NULL : &ctx->erow[ctx->cy];
-    int rowlen = row ? row->size : 0;
-    if (ctx->cx > rowlen) {
-        ctx->cx = rowlen;
-    }
-}
-
-void
-handle_input(struct EditorContext* ctx, int key)
-{
-    switch (key) {
-        case LEFT:
-        case RIGHT:
-        case UP:
-        case DOWN:
-        case PG_DWN:
-        case PG_UP:
-        case END:
-        case HOME:
-        case DEL:
-            handle_cursor_mov(ctx, key);
-            break;
-        case CTRL_KEY('q'):
-            exit(0);
-    }
 }
 
 /***** ui ******/
@@ -304,10 +141,64 @@ update_row(struct EdRow* row)
 }
 
 void
-append_row(struct EditorContext* ctx, char* s, size_t len)
+del_row(struct EditorContext* ctx, int at)
 {
+    if (at < 0 || at >= ctx->n_rows)
+        return;
+    free(ctx->erow[at].buf);
+    free(ctx->erow[at].render);
+    memmove(&ctx->erow[at],
+            &ctx->erow[at + 1],
+            sizeof(*ctx->erow) * (ctx->n_rows - at - 1));
+    ctx->n_rows--;
+    ctx->dirty++;
+}
+
+void
+insert_char_into_row(struct EdRow* row, int at, int c)
+{
+    if (at < 0 || at > row->size) {
+        at = row->size;
+    }
+    row->buf = realloc(row->buf, row->size + 2);
+    memmove(&row->buf[at + 1], &row->buf[at], row->size - at + 1);
+    row->size++;
+    row->buf[at] = c;
+    update_row(row);
+}
+
+void
+append_string_to_row(struct EdRow* row, char* s, size_t len)
+{
+    row->buf = realloc(row->buf, row->size + len);
+    memcpy(&row->buf[row->size], s, len + 1);
+    row->size += len;
+    row->buf[row->size] = '\0';
+    update_row(row);
+}
+
+void
+del_char_from_row(struct EdRow* row, int at)
+{
+    if (at < 0 || at >= row->size) {
+        return;
+    }
+    memmove(&row->buf[at], &row->buf[at + 1], row->size - at);
+    row->size--;
+    update_row(row);
+}
+
+void
+insert_row(struct EditorContext* ctx, int at, char* s, size_t len)
+{
+    if (at < 0 || at > ctx->n_rows) {
+        return;
+    }
     ctx->erow = realloc(ctx->erow, sizeof(*ctx->erow) * (ctx->n_rows + 1));
-    int at = ctx->n_rows;
+    memmove(&ctx->erow[at + 1],
+            &ctx->erow[at],
+            sizeof(*ctx->erow) * (ctx->n_rows - at));
+
     ctx->erow[at].size = len;
     ctx->erow[at].buf = Malloc(len + 1);
     memcpy(ctx->erow[at].buf, s, len);
@@ -318,6 +209,7 @@ append_row(struct EditorContext* ctx, char* s, size_t len)
     update_row(&ctx->erow[at]);
 
     ctx->n_rows++;
+    ctx->dirty++;
 }
 
 int
@@ -409,8 +301,12 @@ draw_status_bar(struct EditorContext* ctx, struct Abuf* ab)
     Abuf_append(ab, "\x1b[7m", 4);
     char status[80], rstatus[80];
     char* filename = ctx->filename ? ctx->filename : "[No Name]";
-    int len = snprintf(
-      status, sizeof(status), "%.20s - %d lines", filename, ctx->n_rows);
+    int len = snprintf(status,
+                       sizeof(status),
+                       "%.20s - %d lines %s",
+                       filename,
+                       ctx->n_rows,
+                       ctx->dirty ? "(modified)" : "");
     int rlen =
       snprintf(rstatus, sizeof(rstatus), "%d/%d", ctx->cy + 1, ctx->n_rows);
     if (len > ctx->screencols) {
@@ -425,6 +321,30 @@ draw_status_bar(struct EditorContext* ctx, struct Abuf* ab)
         Abuf_append(ab, " ", 1);
     }
     Abuf_append(ab, "\x1b[m", 3);
+    Abuf_append(ab, "\r\n", 2);
+}
+
+void
+draw_status_msg(struct EditorContext* ctx, struct Abuf* ab)
+{
+    Abuf_append(ab, "\x1b[K", 3);
+    int msglen = strlen(ctx->status_msg);
+    if (msglen > ctx->screencols) {
+        msglen = ctx->screencols;
+    }
+    if (msglen && time(NULL) - ctx->status_time < 5) {
+        Abuf_append(ab, ctx->status_msg, msglen);
+    }
+}
+
+void
+set_status(struct EditorContext* ctx, const char* fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(ctx->status_msg, sizeof(ctx->status_msg), fmt, ap);
+    va_end(ap);
+    ctx->status_time = time(NULL);
 }
 
 void
@@ -435,6 +355,7 @@ refresh_ui(struct EditorContext* ctx)
     Abuf_append(&ab, RESET_CURSOR, sizeof(RESET_CURSOR));
     draw_rows(ctx, &ab);
     draw_status_bar(ctx, &ab);
+    draw_status_msg(ctx, &ab);
     place_cursor(ctx, &ab);
     Abuf_append(&ab, BLINK_CURSOR, sizeof(BLINK_CURSOR));
     write(STDOUT_FILENO, ab.b, ab.len);
@@ -452,6 +373,9 @@ init_editor(struct EditorContext* ctx, char* filename)
     ctx->n_rows = 0;
     ctx->erow = NULL;
     ctx->filename = filename;
+    ctx->dirty = 0;
+    ctx->status_msg[0] = '\0';
+    ctx->status_time = 0;
     if (window_size(&ctx->screenrows, &ctx->screencols) == -1) {
         unix_error("init window");
     }
@@ -459,10 +383,67 @@ init_editor(struct EditorContext* ctx, char* filename)
 }
 
 /***** file i/o *****/
+
+char*
+editor_buf_to_str(struct EditorContext* ctx, int* len)
+{
+    int totlen = 0;
+    for (int i = 0; i < ctx->n_rows; i++) {
+        totlen += ctx->erow[i].size + 1;
+    }
+    *len = totlen;
+    char* buf = Malloc(totlen);
+    char* p = buf;
+    for (int i = 0; i < ctx->n_rows; i++) {
+        memcpy(p, ctx->erow[i].buf, ctx->erow[i].size);
+        p += ctx->erow[i].size;
+        *p = '\n';
+        p++;
+    }
+    return buf;
+}
+
+void
+save_buf(struct EditorContext* ctx)
+{
+    if (!ctx->filename) {
+        return;
+    }
+
+    int len;
+    char* buf = editor_buf_to_str(ctx, &len);
+    int fd = open(ctx->filename, (O_RDWR | O_CREAT), 0644);
+    if (fd != -1) {
+        if (ftruncate(fd, len) != -1) {
+            if (write(fd, buf, len) == len) {
+                set_status(ctx, "%d bytes written to disk", len);
+                ctx->dirty = 0;
+            } else {
+                set_status(ctx,
+                           "failed to write some or all of buffer: %s",
+                           strerror(errno));
+            }
+            goto close_file;
+        } else {
+            goto close_file;
+        }
+    } else {
+        goto free_buffer;
+    }
+
+close_file:
+    close(fd);
+free_buffer:
+    free(buf);
+}
+
 void
 file_open(struct EditorContext* ctx, struct BumpAlloc* arena, char* filename)
 {
-    FILE* fd = Fopen(filename, "r");
+    FILE* fd = fopen(filename, "r");
+    if (!fd) {
+        return;
+    }
     char* line = NULL;
     size_t line_cap = 0;
     size_t line_len;
@@ -471,7 +452,254 @@ file_open(struct EditorContext* ctx, struct BumpAlloc* arena, char* filename)
                (line[line_len - 1] == '\n' || line[line_len - 1] == '\r')) {
             line_len--;
         }
-        append_row(ctx, line, line_len);
+        insert_row(ctx, ctx->n_rows, line, line_len);
+    }
+    ctx->dirty = 0;
+}
+/***** input *****/
+
+enum EditorKey
+{
+    BACKSPACE = 127,
+    UP = 1000,
+    DOWN,
+    LEFT,
+    RIGHT,
+    HOME,
+    END,
+    PG_UP,
+    PG_DWN,
+    DEL
+};
+
+int
+char_to_key(char c)
+{
+    if (c == '\x1b') {
+        char seq[3];
+        if (read(STDIN_FILENO, seq, 1) != 1)
+            return '\x1b';
+        if (read(STDIN_FILENO, seq + 1, 1) != 1)
+            return '\x1b';
+        if (seq[0] == '[') {
+            if (seq[1] >= '0' && seq[1] <= '9') {
+                if (read(STDIN_FILENO, seq + 2, 1) != 1)
+                    return '\x1b';
+                if (seq[2] == '~') {
+                    switch (seq[1]) {
+                        case '1':
+                            return HOME;
+                        case '3':
+                            return DEL;
+                        case '4':
+                            return END;
+                        case '5':
+                            return PG_UP;
+                        case '6':
+                            return PG_DWN;
+                        case '7':
+                            return HOME;
+                        case '8':
+                            return END;
+                        default:
+                            return '\x1b';
+                    }
+                } else {
+                    return '\x1b';
+                }
+            } else {
+                switch (seq[1]) {
+                    case 'A':
+                        return UP;
+                    case 'B':
+                        return DOWN;
+                    case 'C':
+                        return RIGHT;
+                    case 'D':
+                        return LEFT;
+                    case 'H':
+                        return HOME;
+                    case 'F':
+                        return END;
+                    default:
+                        return '\x1b';
+                }
+            }
+        } else if (seq[0] == 'O') {
+            switch (seq[1]) {
+                case 'H':
+                    return HOME;
+                case 'F':
+                    return END;
+                default:
+                    return '\x1b';
+            }
+        } else {
+            return '\x1b';
+        }
+    } else {
+        return c;
+    }
+}
+
+char
+read_input(void)
+{
+    int nread;
+    char c;
+    while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
+        if (nread == -1 && errno != EAGAIN) {
+            unix_error("read");
+        }
+    }
+    return c;
+}
+
+void
+handle_cursor_mov(struct EditorContext* ctx, int key)
+{
+    struct EdRow* row = (ctx->cy >= ctx->n_rows) ? NULL : &ctx->erow[ctx->cy];
+    switch (key) {
+        case LEFT:
+            if (ctx->cx > 0) {
+                ctx->cx--;
+            } else if (ctx->cy > 0) {
+                ctx->cy--;
+                ctx->cx = ctx->erow[ctx->cy].size;
+            }
+            break;
+        case RIGHT:
+            if (row && ctx->cx < row->size) {
+                ctx->cx++;
+            } else if (row && ctx->cx >= row->size) {
+                ctx->cy++;
+                ctx->cx = 0;
+            }
+            break;
+        case UP:
+            if (ctx->cy > 0) {
+                ctx->cy--;
+            }
+            break;
+        case DOWN:
+            if (ctx->cy < ctx->n_rows) {
+                ctx->cy++;
+            }
+            break;
+        case HOME:
+            ctx->cy = 0;
+            break;
+        case END:
+            ctx->cy = ctx->n_rows - 1;
+            break;
+        case PG_UP:
+            ctx->cy -= ctx->screenrows;
+            if (ctx->cy < 0) {
+                ctx->cy = 0;
+            }
+            break;
+        case PG_DWN:
+            ctx->cy += ctx->screenrows;
+            if (ctx->cy > ctx->n_rows) {
+                ctx->cy = ctx->n_rows;
+            }
+            break;
+    }
+    row = (ctx->cy >= ctx->n_rows) ? NULL : &ctx->erow[ctx->cy];
+    int rowlen = row ? row->size : 0;
+    if (ctx->cx > rowlen) {
+        ctx->cx = rowlen;
+    }
+}
+
+void
+enter_char(struct EditorContext* ctx, char c)
+{
+    if (ctx->cy == ctx->n_rows) {
+        insert_row(ctx, ctx->n_rows, "", 0);
+    }
+    insert_char_into_row(&ctx->erow[ctx->cy], ctx->cx, c);
+    ctx->cx++;
+    ctx->dirty++;
+}
+
+void
+enter_newline(struct EditorContext* ctx)
+{
+    if (ctx->cx == 0) {
+        insert_row(ctx, ctx->cy, "", 0);
+    } else {
+        struct EdRow* row = &ctx->erow[ctx->cy];
+        insert_row(ctx, ctx->cy + 1, &row->buf[ctx->cx], row->size - ctx->cx);
+        row = &ctx->erow[ctx->cy];
+        row->size = ctx->cx;
+        row->buf[row->size] = '\0';
+        update_row(row);
+    }
+    ctx->cy++;
+    ctx->cx = 0;
+}
+
+void
+del_char(struct EditorContext* ctx)
+{
+    if (ctx->cy == ctx->n_rows) {
+        return;
+    }
+    if (ctx->cx == 0 && ctx->cy == 0) {
+        return;
+    }
+
+    struct EdRow* row = &ctx->erow[ctx->cy];
+    if (ctx->cx > 0) {
+        del_char_from_row(row, ctx->cx - 1);
+        ctx->cx--;
+        ctx->dirty++;
+    } else {
+        ctx->cx = ctx->erow[ctx->cy - 1].size;
+        append_string_to_row(&ctx->erow[ctx->cy - 1], row->buf, row->size);
+        del_row(ctx, ctx->cy);
+        ctx->cy--;
+        ctx->dirty++;
+    }
+}
+void
+handle_input(struct EditorContext* ctx, char c)
+{
+    int key = char_to_key(c);
+    switch (key) {
+        case LEFT:
+        case RIGHT:
+        case UP:
+        case DOWN:
+        case PG_DWN:
+        case PG_UP:
+        case END:
+        case HOME:
+            handle_cursor_mov(ctx, key);
+            break;
+        case '\r':
+            enter_newline(ctx);
+            break;
+        case CTRL_KEY('s'):
+            save_buf(ctx);
+            break;
+        case DEL:
+            handle_cursor_mov(ctx, RIGHT);
+            // fall through
+        case BACKSPACE:
+        case CTRL_KEY('h'):
+            del_char(ctx);
+            break;
+        case CTRL_KEY('q'):
+            exit(0);
+            break;
+        case CTRL_KEY('l'):
+        case '\x1b':
+            break;
+        default:
+            enter_char(ctx, c);
+            break;
     }
 }
 
@@ -482,17 +710,18 @@ main(int argc, char* argv[])
     struct BumpAlloc* arena = Bump_new(MEGABYTES((size_t)2));
     struct EditorContext* ctx = Bump_alloc(arena, sizeof(*ctx));
     enable_raw_mode();
+    atexit(disable_raw_mode);
     // argv is a NULL-terminated array, so this is fine
     init_editor(ctx, argv[1]);
     if (argc > 1) {
         file_open(ctx, arena, argv[1]);
     }
-    atexit(disable_raw_mode);
+    set_status(ctx, "HELP: Ctrl-S to save | Ctrl-Q to quit");
 
     while (1) {
         refresh_ui(ctx);
-        int key = read_key();
-        handle_input(ctx, key);
+        char c = read_input();
+        handle_input(ctx, c);
     }
     return EXIT_SUCCESS;
 }
