@@ -40,6 +40,7 @@ struct EdRow
 
 struct EditorContext
 {
+    struct BumpAlloc* bmp;
     int cx, cy;
     int rx;
     int row_offset, col_offset;
@@ -78,23 +79,32 @@ enable_raw_mode(void)
 /***** append buffer *****/
 struct Abuf
 {
-    char* b;
+    char* cursor;
     size_t len;
+    size_t capacity;
+    char buf[];
 };
 
 void
 Abuf_append(struct Abuf* ab, const char* s, size_t len)
 {
-    char* new = Realloc(ab->b, ab->len + len);
-    memcpy(&new[ab->len], s, len);
-    ab->b = new;
+    assert(ab->len + len <= ab->capacity);
+    memcpy(ab->cursor, s, len);
+    ab->cursor += len;
     ab->len += len;
+}
+
+void
+Abuf_reset(struct Abuf* ab)
+{
+    ab->cursor = ab->buf;
+    ab->buf[0] = '\0';
+    ab->len = 0;
 }
 
 void
 Abuf_free(struct Abuf* ab)
 {
-    free(ab->b);
 }
 
 /***** ui ******/
@@ -355,20 +365,25 @@ void
 refresh_ui(struct EditorContext* ctx)
 {
     editor_scroll(ctx);
-    struct Abuf ab = { .b = NULL, .len = 0 };
-    Abuf_append(&ab, RESET_CURSOR, sizeof(RESET_CURSOR));
-    draw_rows(ctx, &ab);
-    draw_status_bar(ctx, &ab);
-    draw_status_msg(ctx, &ab);
-    place_cursor(ctx, &ab);
-    Abuf_append(&ab, BLINK_CURSOR, sizeof(BLINK_CURSOR));
-    write(STDOUT_FILENO, ab.b, ab.len);
-    Abuf_free(&ab);
+    size_t ab_capacity = (ctx->screenrows + 2) * (ctx->screencols + 2);
+    struct Abuf* ab = Bump_alloc(ctx->bmp, sizeof(*ab) + ab_capacity);
+    ab->len = 0;
+    ab->capacity = ab_capacity;
+    ab->cursor = ab->buf;
+    Abuf_append(ab, RESET_CURSOR, sizeof(RESET_CURSOR));
+    draw_rows(ctx, ab);
+    draw_status_bar(ctx, ab);
+    draw_status_msg(ctx, ab);
+    place_cursor(ctx, ab);
+    Abuf_append(ab, BLINK_CURSOR, sizeof(BLINK_CURSOR));
+    write(STDOUT_FILENO, ab->buf, ab->len);
+    Abuf_reset(ab);
 }
 
 void
-init_editor(struct EditorContext* ctx, char* filename)
+init_editor(struct EditorContext* ctx, char* filename, struct BumpAlloc* bmp)
 {
+    ctx->bmp = bmp;
     ctx->cx = 0;
     ctx->cy = 0;
     ctx->rx = 0;
@@ -741,14 +756,14 @@ handle_input(struct EditorContext* ctx, char c)
 int
 main(int argc, char* argv[])
 {
-    struct BumpAlloc* arena = Bump_new(MEGABYTES((size_t)2));
-    struct EditorContext* ctx = Bump_alloc(arena, sizeof(*ctx));
+    struct BumpAlloc* bmp = Bump_new(MEGABYTES((size_t)2));
+    struct EditorContext* ctx = Bump_alloc(bmp, sizeof(*ctx));
     enable_raw_mode();
     atexit(disable_raw_mode);
     // argv is a NULL-terminated array, so this is fine
-    init_editor(ctx, argv[1]);
+    init_editor(ctx, argv[1], bmp);
     if (argc > 1) {
-        file_open(ctx, arena, argv[1]);
+        file_open(ctx, bmp, argv[1]);
     }
     set_status(ctx, "HELP: Ctrl-S to save | Ctrl-Q to quit");
 
