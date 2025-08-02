@@ -21,6 +21,7 @@ Bump_alloc(struct BumpAlloc* arena, size_t size)
     void* ptr = arena->brk;
     arena->brk += size;
     arena->allocated += size;
+    memset(ptr, 0, size);
     return ptr;
 }
 
@@ -32,7 +33,7 @@ Pool_new(size_t capacity, size_t block_size)
     // this also guarantees that the block will be a least 8 bytes
     // which is enough to hold a pointer to the next node in the freelist
     block_size = (block_size + 7) & ~7;
-    struct MemoryPool* pool = Calloc(1, sizeof(*pool) + capacity * block_size);
+    struct MemoryPool* pool = Malloc(sizeof(*pool) + capacity * block_size);
     pool->max_count = capacity;
     pool->block_size = block_size;
     pool->allocated = 0;

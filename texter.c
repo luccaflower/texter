@@ -374,15 +374,20 @@ init_editor(struct EditorContext* ctx, char* filename, struct BumpAlloc* bmp)
 
 /***** file i/o *****/
 
-char*
-editor_buf_to_str(struct EditorContext* ctx, int* len)
+void
+save_buf(struct EditorContext* ctx)
 {
+    struct BumpAlloc scratch = *ctx->bmp;
+    if (!ctx->filename) {
+        ctx->filename = prompt(ctx, "Save as: %s");
+    }
+
     int totlen = 0;
     for (int i = 0; i < ctx->n_rows; i++) {
         totlen += ctx->erow[i].size + 1;
     }
-    *len = totlen;
-    char* buf = Malloc(totlen);
+    int len = totlen;
+    char* buf = Bump_alloc(&scratch, totlen);
     char* p = buf;
     for (int i = 0; i < ctx->n_rows; i++) {
         memcpy(p, ctx->erow[i].buf, ctx->erow[i].size);
@@ -390,41 +395,21 @@ editor_buf_to_str(struct EditorContext* ctx, int* len)
         *p = '\n';
         p++;
     }
-    return buf;
-}
-
-void
-save_buf(struct EditorContext* ctx)
-{
-    if (!ctx->filename) {
-        ctx->filename = prompt(ctx, "Save as: %s");
-    }
-
-    int len;
-    char* buf = editor_buf_to_str(ctx, &len);
     int fd = open(ctx->filename, (O_RDWR | O_CREAT), 0644);
-    if (fd != -1) {
-        if (ftruncate(fd, len) != -1) {
-            if (write(fd, buf, len) == len) {
-                set_status(ctx, "%d bytes written to disk", len);
-                ctx->dirty = 0;
-            } else {
-                set_status(ctx,
-                           "failed to write some or all of buffer: %s",
-                           strerror(errno));
-            }
-            goto close_file;
-        } else {
-            goto close_file;
-        }
-    } else {
-        goto free_buffer;
+    if (fd == -1) {
+        return;
     }
-
-close_file:
+    if (ftruncate(fd, len) != -1) {
+        if (write(fd, buf, len) == len) {
+            set_status(ctx, "%d bytes written to disk", len);
+            ctx->dirty = 0;
+        } else {
+            set_status(ctx,
+                       "failed to write some or all of buffer: %s",
+                       strerror(errno));
+        }
+    }
     close(fd);
-free_buffer:
-    free(buf);
 }
 
 void
