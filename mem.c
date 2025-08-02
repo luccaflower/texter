@@ -3,13 +3,6 @@
 #include <assert.h>
 #include <string.h>
 
-struct BumpAlloc
-{
-    size_t max;
-    size_t allocated;
-    void* brk;
-};
-
 struct BumpAlloc*
 Bump_new(size_t capacity)
 {
@@ -32,19 +25,6 @@ Bump_alloc(struct BumpAlloc* arena, size_t size)
 }
 
 // fixed-size memory pool
-struct PoolFreeList
-{
-    struct PoolFreeList* next;
-};
-struct MemoryPool
-{
-    size_t max_count;
-    size_t allocated;
-    size_t block_size;
-    void* brk;
-    struct PoolFreeList* freelist;
-};
-
 struct MemoryPool*
 Pool_new(size_t capacity, size_t block_size)
 {

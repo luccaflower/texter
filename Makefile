@@ -2,7 +2,8 @@ CFLAGS=-O0 -g -Wall -Werror
 PROG = texter
 OBJ = texter.o \
 	  util.o \
-	  mem.o
+	  mem.o \
+	  abuf.o
 
 $(PROG): $(OBJ)
 

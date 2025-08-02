@@ -5,18 +5,35 @@
 #define KILOBYTES(i) ((i) * 1024)
 #define MEGABYTES(i) (KILOBYTES((i)) * 1024)
 
-typedef struct BumpAlloc BumpAlloc;
-BumpAlloc*
+struct BumpAlloc
+{
+    size_t max;
+    size_t allocated;
+    void* brk;
+};
+
+struct BumpAlloc*
 Bump_new(size_t capacity);
 void*
-Bump_alloc(BumpAlloc* bump, size_t size);
+Bump_alloc(struct BumpAlloc* bump, size_t size);
 
-typedef struct MemoryPool MemoryPool;
-MemoryPool*
+struct PoolFreeList
+{
+    struct PoolFreeList* next;
+};
+struct MemoryPool
+{
+    size_t max_count;
+    size_t allocated;
+    size_t block_size;
+    void* brk;
+    struct PoolFreeList* freelist;
+};
+struct MemoryPool*
 Pool_new(size_t capacity, size_t block_size);
 void*
-Pool_alloc(MemoryPool* pool);
+Pool_alloc(struct MemoryPool* pool);
 void
-Pool_free(MemoryPool* pool, void* ptr);
+Pool_free(struct MemoryPool* pool, void* ptr);
 
 #endif // !MEM_MODULE

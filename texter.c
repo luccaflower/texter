@@ -1,3 +1,4 @@
+#include "abuf.h"
 #include "mem.h"
 #include "util.h"
 #include <assert.h>
@@ -52,6 +53,7 @@ struct EditorContext
     time_t status_time;
     struct EdRow* erow;
     char* filename;
+    struct Abuf* ab;
 };
 
 char*
@@ -74,37 +76,6 @@ enable_raw_mode(void)
     raw.c_cc[VMIN] = 0;
     raw.c_cc[VTIME] = 1;
     Tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
-}
-
-/***** append buffer *****/
-struct Abuf
-{
-    char* cursor;
-    size_t len;
-    size_t capacity;
-    char buf[];
-};
-
-void
-Abuf_append(struct Abuf* ab, const char* s, size_t len)
-{
-    assert(ab->len + len <= ab->capacity);
-    memcpy(ab->cursor, s, len);
-    ab->cursor += len;
-    ab->len += len;
-}
-
-void
-Abuf_reset(struct Abuf* ab)
-{
-    ab->cursor = ab->buf;
-    ab->buf[0] = '\0';
-    ab->len = 0;
-}
-
-void
-Abuf_free(struct Abuf* ab)
-{
 }
 
 /***** ui ******/
@@ -364,12 +335,8 @@ set_status(struct EditorContext* ctx, const char* fmt, ...)
 void
 refresh_ui(struct EditorContext* ctx)
 {
+    struct Abuf* ab = ctx->ab;
     editor_scroll(ctx);
-    size_t ab_capacity = (ctx->screenrows + 2) * (ctx->screencols + 2);
-    struct Abuf* ab = Bump_alloc(ctx->bmp, sizeof(*ab) + ab_capacity);
-    ab->len = 0;
-    ab->capacity = ab_capacity;
-    ab->cursor = ab->buf;
     Abuf_append(ab, RESET_CURSOR, sizeof(RESET_CURSOR));
     draw_rows(ctx, ab);
     draw_status_bar(ctx, ab);
@@ -398,6 +365,10 @@ init_editor(struct EditorContext* ctx, char* filename, struct BumpAlloc* bmp)
     if (window_size(&ctx->screenrows, &ctx->screencols) == -1) {
         unix_error("init window");
     }
+    size_t capacity = (ctx->screenrows + 2) * (ctx->screencols + 2);
+    struct Abuf* ab = Bump_alloc(ctx->bmp, sizeof(*ab) + capacity);
+    Abuf_init(ab, capacity);
+    ctx->ab = ab;
     ctx->screenrows -= 2;
 }
 
