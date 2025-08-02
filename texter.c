@@ -1,6 +1,7 @@
 #include "mem.h"
 #include "util.h"
 #include <assert.h>
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdarg.h>
@@ -51,6 +52,9 @@ struct EditorContext
     struct EdRow* erow;
     char* filename;
 };
+
+char*
+prompt(struct EditorContext* ctx, char* prompt);
 
 /**** terminal *****/
 
@@ -407,7 +411,7 @@ void
 save_buf(struct EditorContext* ctx)
 {
     if (!ctx->filename) {
-        return;
+        ctx->filename = prompt(ctx, "Save as: %s");
     }
 
     int len;
@@ -553,6 +557,36 @@ read_input(void)
         }
     }
     return c;
+}
+
+char*
+prompt(struct EditorContext* ctx, char* prompt)
+{
+    size_t bufsize = 128;
+    char* buf = Calloc(1, bufsize);
+    size_t buflen = 0;
+    while (1) {
+        set_status(ctx, prompt, buf);
+        refresh_ui(ctx);
+        int c = read_input();
+        if (c == '\x1b') {
+            set_status(ctx, "");
+            free(buf);
+            return NULL;
+        } else if (c == '\r') {
+            if (buflen != 0) {
+                set_status(ctx, "");
+                return buf;
+            }
+        } else if (!iscntrl(c) && c < 128) {
+            if (buflen == bufsize - 1) {
+                bufsize *= 2;
+                buf = Realloc(buf, bufsize);
+            }
+            buf[buflen++] = c;
+            buf[buflen] = '\0';
+        }
+    }
 }
 
 void
