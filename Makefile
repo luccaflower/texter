@@ -1,12 +1,18 @@
-CFLAGS=-O0 -g -Wall -Werror
+CFLAGS= -O0 -g -Wall -Werror
+TEST = test
 PROG = texter
-OBJ = texter.o \
-	  util.o \
+OBJ =  	  util.o \
 	  mem.o \
-	  abuf.o
+	  abuf.o \
+	  gap.o
 
-$(PROG): $(OBJ)
+$(PROG): $(PROG).o $(OBJ)
 
-.PHONY: clean
+$(TEST): LDLIBS += -lcheck
+$(TEST): $(TEST).o $(OBJ)
+
+.PHONY: clean check
+check: $(TEST) 
+	./test
 clean:
-	rm -rf texter
+	rm -rf *.o texter test

@@ -1,4 +1,5 @@
 .cache
 texter
+test
 compile_commands.json
 *.o
