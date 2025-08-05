@@ -17,7 +17,10 @@ char*
 Gap_str(struct GapBuffer* gap);
 
 void
-Gap_insert(struct GapBuffer* gap, char* buf);
+Gap_insert_str(struct GapBuffer* gap, char* buf);
+
+void
+Gap_insert_chr(struct GapBuffer* gap, char c);
 
 void
 Gap_mov(struct GapBuffer* gap, int steps);

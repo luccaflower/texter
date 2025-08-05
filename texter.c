@@ -151,6 +151,11 @@ insert_char_into_row(struct EdRow* row, int at, int c)
     memmove(&row->buf[at + 1], &row->buf[at], row->size - at + 1);
     row->size++;
     row->buf[at] = c;
+
+    struct GapBuffer* gap = row->gap;
+    Gap_mov(gap, at - gap->cur_beg);
+    Gap_insert_chr(gap, c);
+
     update_row(row);
 }
 
@@ -162,7 +167,7 @@ append_string_to_row(struct EdRow* row, char* s, size_t len)
     row->size += len;
     row->buf[row->size] = '\0';
     Gap_mov(row->gap, row->gap->size);
-    Gap_insert(row->gap, s);
+    Gap_insert_str(row->gap, s);
     update_row(row);
 }
 
@@ -174,6 +179,10 @@ del_char_from_row(struct EdRow* row, int at)
     }
     memmove(&row->buf[at], &row->buf[at + 1], row->size - at);
     row->size--;
+
+    struct GapBuffer* gap = row->gap;
+    Gap_mov(gap, at - gap->cur_beg);
+    Gap_del(gap, 1);
     update_row(row);
 }
 

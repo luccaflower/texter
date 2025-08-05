@@ -31,15 +31,15 @@ Gap_str(struct GapBuffer* gap)
 }
 
 void
-Gap_insert(struct GapBuffer* gap, char* buf)
+Gap_insert_str(struct GapBuffer* gap, char* buf)
 {
     size_t len = strlen(buf);
     size_t gap_len = gap->cur_end - gap->cur_beg;
     if (len > gap_len) {
-        gap->buf = Realloc(gap->buf, gap->size + len + GAP_SIZE);
+        gap->buf = Realloc(gap->buf, gap->size + len + GAP_SIZE + 1);
         char* from = &gap->buf[gap->cur_end];
         char* to = &gap->buf[gap->cur_beg + GAP_SIZE + len];
-        size_t movsize = gap->size - gap->cur_beg;
+        size_t movsize = gap->size - gap->cur_beg + 1;
         memmove(to, from, movsize);
         memcpy(gap->buf + gap->cur_beg, buf, len);
         gap->cur_beg += len;
@@ -50,6 +50,21 @@ Gap_insert(struct GapBuffer* gap, char* buf)
         gap->cur_beg += len;
         gap->size += len;
     }
+}
+
+void
+Gap_insert_chr(struct GapBuffer* gap, char c)
+{
+
+    if (!(gap->cur_end - gap->cur_beg)) {
+        gap->buf = Realloc(gap->buf, gap->size + GAP_SIZE + 1);
+        char* from = &gap->buf[gap->cur_end];
+        char* to = &gap->buf[gap->cur_end + GAP_SIZE];
+        memmove(to, from, gap->size - gap->cur_beg + 1);
+        gap->cur_end += GAP_SIZE;
+    }
+    gap->buf[gap->cur_beg] = c;
+    gap->cur_beg++;
 }
 
 void
@@ -77,13 +92,12 @@ Gap_mov(struct GapBuffer* gap, int steps)
 void
 Gap_del(struct GapBuffer* gap, int steps)
 {
-    if (!gap->size || !gap->cur_beg) {
+    if (gap->cur_beg >= gap->size) {
         return;
     }
-    if (steps > gap->cur_beg) {
-        steps = gap->cur_beg;
+    if (steps > gap->size - gap->cur_beg) {
+        steps = gap->size - gap->cur_beg;
     }
     gap->size -= steps;
-    gap->cur_beg -= steps;
-    gap->buf[gap->cur_beg] = '\0';
+    gap->cur_end += steps;
 }
