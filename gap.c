@@ -22,7 +22,7 @@ Gap_new(char* buf)
 char*
 Gap_str(struct GapBuffer* gap)
 {
-    char* buf = Malloc(gap->size);
+    char* buf = Malloc(gap->size + 1);
     memcpy(buf, gap->buf, gap->cur_beg);
     memcpy(
       &buf[gap->cur_beg], &gap->buf[gap->cur_end], gap->size - gap->cur_beg);
@@ -65,6 +65,7 @@ Gap_insert_chr(struct GapBuffer* gap, char c)
     }
     gap->buf[gap->cur_beg] = c;
     gap->cur_beg++;
+    gap->size++;
 }
 
 void

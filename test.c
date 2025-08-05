@@ -148,6 +148,19 @@ START_TEST(del_then_insert_large)
                      Gap_str(gap));
 }
 END_TEST
+
+START_TEST(insert_many_single_chars)
+{
+    char end[] = "end";
+    struct GapBuffer* gap = Gap_new(end);
+    char c = 'a';
+    for (size_t i = 0; i < 32; i++) {
+        Gap_insert_chr(gap, c);
+    }
+    ck_assert_str_eq("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaend", Gap_str(gap));
+}
+END_TEST
+
 Suite*
 test_suite(void)
 {
@@ -169,6 +182,7 @@ test_suite(void)
     tcase_add_test(tc_core, del_past_end_clamps_to_end);
     tcase_add_test(tc_core, del_then_insert);
     tcase_add_test(tc_core, del_then_insert_large);
+    tcase_add_test(tc_core, insert_many_single_chars);
     suite_add_tcase(s, tc_core);
     return s;
 }

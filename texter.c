@@ -106,9 +106,11 @@ window_size(int* rows, int* cols)
 void
 update_row(struct EdRow* row)
 {
+    struct GapBuffer* gap = row->gap;
+    char* buf = Gap_str(gap);
     int tabs = 0;
-    for (int i = 0; i < row->size; i++) {
-        if (row->buf[i] == '\t') {
+    for (int i = 0; i < gap->size; i++) {
+        if (buf[i] == '\t') {
             tabs++;
         }
     }
@@ -117,13 +119,14 @@ update_row(struct EdRow* row)
     row->render = Malloc(row->size + tab_chars + 1);
     int i = 0;
     for (int j = 0; j < row->size; j++) {
-        if (row->buf[j] == '\t') {
+        if (buf[j] == '\t') {
             i += snprintf(row->render + i, TABWIDTH + 1, "%*c", TABWIDTH, ' ');
         } else {
-            row->render[i] = row->buf[j];
+            row->render[i] = buf[j];
             i++;
         }
     }
+    free(buf);
     row->r_size = i;
 }
 
@@ -215,13 +218,15 @@ int
 row_cx_to_rx(struct EdRow* row, int cx)
 {
     int rx = 0;
+    char* buf = Gap_str(row->gap);
     for (int i = 0; i < cx; i++) {
-        if (row->buf[i] == '\t') {
+        if (buf[i] == '\t') {
             rx += TABWIDTH - (rx % TABWIDTH);
         } else {
             rx++;
         }
     }
+    free(buf);
     return rx;
 }
 
@@ -440,6 +445,7 @@ file_open(struct EditorContext* ctx, struct BumpAlloc* arena, char* filename)
         while (line_len > 0 &&
                (line[line_len - 1] == '\n' || line[line_len - 1] == '\r')) {
             line_len--;
+            line[line_len] = '\0';
         }
         insert_row(ctx, ctx->n_rows, line, line_len);
     }
@@ -649,11 +655,12 @@ enter_newline(struct EditorContext* ctx)
         insert_row(ctx, ctx->cy, "", 0);
     } else {
         struct EdRow* row = &ctx->erow[ctx->cy];
-        insert_row(ctx, ctx->cy + 1, &row->buf[ctx->cx], row->size - ctx->cx);
+        char* buf = Gap_str(row->gap);
+        insert_row(ctx, ctx->cy + 1, &buf[ctx->cx], row->size - ctx->cx);
         row = &ctx->erow[ctx->cy];
         row->size = ctx->cx;
-        row->buf[row->size] = '\0';
         update_row(row);
+        free(buf);
     }
     ctx->cy++;
     ctx->cx = 0;
@@ -676,10 +683,12 @@ del_char(struct EditorContext* ctx)
         ctx->dirty++;
     } else {
         ctx->cx = ctx->erow[ctx->cy - 1].size;
-        append_string_to_row(&ctx->erow[ctx->cy - 1], row->buf, row->size);
+        char* buf = Gap_str(row->gap);
+        append_string_to_row(&ctx->erow[ctx->cy - 1], buf, row->size);
         del_row(ctx, ctx->cy);
         ctx->cy--;
         ctx->dirty++;
+        free(buf);
     }
 }
 void
