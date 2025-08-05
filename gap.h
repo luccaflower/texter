@@ -21,4 +21,7 @@ Gap_insert(struct GapBuffer* gap, char* buf);
 
 void
 Gap_mov(struct GapBuffer* gap, int steps);
+
+void
+Gap_del(struct GapBuffer* gap, int chars);
 #endif // !GAP_BUFFER

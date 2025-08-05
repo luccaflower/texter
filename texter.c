@@ -1,4 +1,5 @@
 #include "abuf.h"
+#include "gap.h"
 #include "mem.h"
 #include "util.h"
 #include <assert.h>
@@ -36,6 +37,7 @@ struct EdRow
     int size;
     int r_size;
     char* buf;
+    struct GapBuffer* gap;
     char* render;
 };
 
@@ -159,6 +161,8 @@ append_string_to_row(struct EdRow* row, char* s, size_t len)
     memcpy(&row->buf[row->size], s, len + 1);
     row->size += len;
     row->buf[row->size] = '\0';
+    Gap_mov(row->gap, row->gap->size);
+    Gap_insert(row->gap, s);
     update_row(row);
 }
 
@@ -189,6 +193,7 @@ insert_row(struct EditorContext* ctx, int at, char* s, size_t len)
     memcpy(ctx->erow[at].buf, s, len);
     ctx->erow[at].buf[len] = '\0';
 
+    ctx->erow[at].gap = Gap_new(s);
     ctx->erow[at].r_size = 0;
     ctx->erow[at].render = NULL;
     update_row(&ctx->erow[at]);

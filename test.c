@@ -65,6 +65,7 @@ START_TEST(mov_cursor_then_insert)
     Gap_insert(gap, "s");
     ck_assert_str_eq("insert", Gap_str(gap));
 }
+END_TEST
 
 START_TEST(mov_fwd_then_back_then_insert)
 {
@@ -74,6 +75,7 @@ START_TEST(mov_fwd_then_back_then_insert)
     Gap_insert(gap, "in ");
     ck_assert_str_eq("insert in the middle", Gap_str(gap));
 }
+END_TEST
 
 START_TEST(clamp_at_the_end)
 {
@@ -82,6 +84,7 @@ START_TEST(clamp_at_the_end)
     Gap_insert(gap, " end");
     ck_assert_str_eq("begin end", Gap_str(gap));
 }
+END_TEST
 
 START_TEST(clamp_at_beginning)
 {
@@ -90,9 +93,64 @@ START_TEST(clamp_at_beginning)
     Gap_insert(gap, "begin ");
     ck_assert_str_eq("begin end", Gap_str(gap));
 }
+END_TEST
 
+START_TEST(del_char)
+{
+    struct GapBuffer* gap = Gap_new("delete.");
+    Gap_mov(gap, gap->size);
+    Gap_del(gap, 1);
+    ck_assert_str_eq("delete", Gap_str(gap));
+}
+END_TEST
+
+START_TEST(del_empty_is_noop)
+{
+    struct GapBuffer* gap = Gap_new("");
+    Gap_del(gap, 1);
+    ck_assert_str_eq("", Gap_str(gap));
+}
+END_TEST
+
+START_TEST(del_from_start_is_noop)
+{
+    struct GapBuffer* gap = Gap_new("something");
+    Gap_del(gap, 1);
+    ck_assert_str_eq("something", Gap_str(gap));
+}
+END_TEST
+
+START_TEST(del_past_end_clamps_to_end)
+{
+    struct GapBuffer* gap = Gap_new("something");
+    Gap_mov(gap, gap->size);
+    Gap_del(gap, 20);
+    ck_assert_str_eq("", Gap_str(gap));
+}
+END_TEST
+
+START_TEST(del_then_insert)
+{
+    struct GapBuffer* gap = Gap_new("delete something in here");
+    Gap_mov(gap, 16);
+    Gap_del(gap, 9);
+    Gap_insert(gap, "nothing");
+    ck_assert_str_eq("delete nothing in here", Gap_str(gap));
+}
+END_TEST
+
+START_TEST(del_then_insert_large)
+{
+    struct GapBuffer* gap = Gap_new("delete something in here");
+    Gap_mov(gap, 16);
+    Gap_del(gap, 9);
+    Gap_insert(gap, "something quite larger than that");
+    ck_assert_str_eq("delete something quite larger than that in here",
+                     Gap_str(gap));
+}
+END_TEST
 Suite*
-test_suit(void)
+test_suite(void)
 {
     Suite* s = suite_create("Test");
     TCase* tc_core = tcase_create("Core");
@@ -106,6 +164,12 @@ test_suit(void)
     tcase_add_test(tc_core, mov_fwd_then_back_then_insert);
     tcase_add_test(tc_core, clamp_at_the_end);
     tcase_add_test(tc_core, clamp_at_beginning);
+    tcase_add_test(tc_core, del_char);
+    tcase_add_test(tc_core, del_empty_is_noop);
+    tcase_add_test(tc_core, del_from_start_is_noop);
+    tcase_add_test(tc_core, del_past_end_clamps_to_end);
+    tcase_add_test(tc_core, del_then_insert);
+    tcase_add_test(tc_core, del_then_insert_large);
     suite_add_tcase(s, tc_core);
     return s;
 }
@@ -114,7 +178,7 @@ int
 main(int argc, char* argv[])
 {
     int failed;
-    Suite* s = test_suit();
+    Suite* s = test_suite();
     SRunner* sr = srunner_create(s);
     srunner_run_all(sr, CK_NORMAL);
     failed = srunner_ntests_failed(sr);

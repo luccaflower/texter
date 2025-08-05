@@ -73,3 +73,17 @@ Gap_mov(struct GapBuffer* gap, int steps)
     gap->cur_beg += steps;
     gap->cur_end += steps;
 }
+
+void
+Gap_del(struct GapBuffer* gap, int steps)
+{
+    if (!gap->size || !gap->cur_beg) {
+        return;
+    }
+    if (steps > gap->cur_beg) {
+        steps = gap->cur_beg;
+    }
+    gap->size -= steps;
+    gap->cur_beg -= steps;
+    gap->buf[gap->cur_beg] = '\0';
+}
