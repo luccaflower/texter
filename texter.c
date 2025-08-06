@@ -34,7 +34,6 @@ static struct GlobalState G;
 
 struct EdRow
 {
-    int r_size;
     struct GapBuffer* gap;
 };
 
@@ -155,7 +154,6 @@ insert_row(struct EditorContext* ctx, int at, char* s, size_t len)
             sizeof(*ctx->erow) * (ctx->n_rows - at));
 
     ctx->erow[at].gap = Gap_new(s);
-    ctx->erow[at].r_size = 0;
 
     ctx->n_rows++;
     ctx->dirty++;
@@ -220,15 +218,15 @@ draw_rows(struct EditorContext* ctx, struct Abuf* ab)
                 Abuf_append(ab, "~", 1);
             }
         } else {
-            int len = ctx->erow[filerow].r_size - ctx->col_offset;
+            struct BumpAlloc bmp = *ctx->bmp;
+            struct GapBuffer* gap = ctx->erow[filerow].gap;
+            int len = gap->size - ctx->col_offset;
             if (len < 0) {
                 len = 0;
             }
             if (len > ctx->screencols) {
                 len = ctx->screencols;
             }
-            struct BumpAlloc bmp = *ctx->bmp;
-            struct GapBuffer* gap = ctx->erow[filerow].gap;
             char* to_render = Bump_alloc(&bmp, ctx->screencols + 1);
             Gap_substr(gap,
                        ctx->col_offset,

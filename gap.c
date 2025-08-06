@@ -40,7 +40,7 @@ Gap_substr(struct GapBuffer* gap, int from, int to, char* buf)
     }
     size_t len = to - from;
     if (from + len <= gap->cur_beg) {
-        memcpy(buf + from, gap->buf, len);
+        memcpy(buf, gap->buf + from, len);
         buf[len] = '\0';
     } else if (from < gap->cur_beg) {
         memcpy(buf, gap->buf + from, gap->cur_beg - from);
