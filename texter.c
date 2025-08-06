@@ -36,7 +36,6 @@ struct EdRow
 {
     int r_size;
     struct GapBuffer* gap;
-    char* render;
 };
 
 struct EditorContext
@@ -102,38 +101,10 @@ window_size(int* rows, int* cols)
 }
 
 void
-update_row(struct EdRow* row)
-{
-    struct GapBuffer* gap = row->gap;
-    char* buf = Gap_str(gap);
-    int tabs = 0;
-    for (int i = 0; i < gap->size; i++) {
-        if (buf[i] == '\t') {
-            tabs++;
-        }
-    }
-    free(row->render);
-    int tab_chars = tabs * TABWIDTH;
-    row->render = Malloc(gap->size + tab_chars + 1);
-    int i = 0;
-    for (int j = 0; j < gap->size; j++) {
-        if (buf[j] == '\t') {
-            i += snprintf(row->render + i, TABWIDTH + 1, "%*c", TABWIDTH, ' ');
-        } else {
-            row->render[i] = buf[j];
-            i++;
-        }
-    }
-    free(buf);
-    row->r_size = i;
-}
-
-void
 del_row(struct EditorContext* ctx, int at)
 {
     if (at < 0 || at >= ctx->n_rows)
         return;
-    free(ctx->erow[at].render);
     memmove(&ctx->erow[at],
             &ctx->erow[at + 1],
             sizeof(*ctx->erow) * (ctx->n_rows - at - 1));
@@ -151,7 +122,6 @@ insert_char_into_row(struct EdRow* row, int at, int c)
 
     Gap_mov(gap, at - gap->cur_beg);
     Gap_insert_chr(gap, c);
-    update_row(row);
 }
 
 void
@@ -159,7 +129,6 @@ append_string_to_row(struct EdRow* row, char* s, size_t len)
 {
     Gap_mov(row->gap, row->gap->size);
     Gap_insert_str(row->gap, s);
-    update_row(row);
 }
 
 void
@@ -172,7 +141,6 @@ del_char_from_row(struct EdRow* row, int at)
 
     Gap_mov(gap, at - gap->cur_beg);
     Gap_del(gap, 1);
-    update_row(row);
 }
 
 void
@@ -188,8 +156,6 @@ insert_row(struct EditorContext* ctx, int at, char* s, size_t len)
 
     ctx->erow[at].gap = Gap_new(s);
     ctx->erow[at].r_size = 0;
-    ctx->erow[at].render = NULL;
-    update_row(&ctx->erow[at]);
 
     ctx->n_rows++;
     ctx->dirty++;
@@ -199,7 +165,7 @@ int
 row_cx_to_rx(struct EdRow* row, int cx)
 {
     int rx = 0;
-    char* buf = Gap_str(row->gap);
+    char* buf = Gap_substr(row->gap, 0, cx);
     for (int i = 0; i < cx; i++) {
         if (buf[i] == '\t') {
             rx += TABWIDTH - (rx % TABWIDTH);
@@ -261,7 +227,31 @@ draw_rows(struct EditorContext* ctx, struct Abuf* ab)
             if (len > ctx->screencols) {
                 len = ctx->screencols;
             }
-            Abuf_append(ab, &ctx->erow[filerow].render[ctx->col_offset], len);
+            char* to_render = Gap_substr(ctx->erow[filerow].gap,
+                                         ctx->col_offset,
+                                         ctx->col_offset + ctx->screencols);
+            int tabs = 0;
+            for (size_t i = 0; to_render[i]; i++) {
+                if (to_render[i] == '\t') {
+                    tabs++;
+                }
+            }
+            int tab_chars = tabs * (TABWIDTH - 1);
+            // a render string only needs to live as long as a single interation
+            struct BumpAlloc bmp = *ctx->bmp;
+            char* render = Bump_alloc(&bmp, strlen(to_render) + tab_chars + 1);
+            int i = 0;
+            for (int j = 0; to_render[j]; j++) {
+                if (to_render[j] == '\t') {
+                    i +=
+                      snprintf(render + i, TABWIDTH + 1, "%*c", TABWIDTH, ' ');
+                } else {
+                    render[i] = to_render[j];
+                    i++;
+                }
+            }
+            free(to_render);
+            Abuf_append(ab, render, i);
         }
         Abuf_append(ab, ERASE_LINE, sizeof(ERASE_LINE));
         Abuf_append(ab, "\r\n", 2);
@@ -645,7 +635,6 @@ enter_newline(struct EditorContext* ctx)
         Gap_mov(gap, ctx->cx - gap->cur_beg);
         Gap_del(gap, gap->size);
         row = &ctx->erow[ctx->cy];
-        update_row(row);
         free(buf);
     }
     ctx->cy++;

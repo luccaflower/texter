@@ -161,6 +161,22 @@ START_TEST(insert_many_single_chars)
 }
 END_TEST
 
+START_TEST(substring_from_beginning)
+{
+    struct GapBuffer* gap = Gap_new("substring this");
+    char* substr = Gap_substr(gap, 0, 9);
+    ck_assert_str_eq("substring", substr);
+}
+END_TEST
+
+START_TEST(substring_clamps_at_the_end)
+{
+    struct GapBuffer* gap = Gap_new("substring this");
+    char* substr = Gap_substr(gap, 10, 20);
+    ck_assert_str_eq("this", substr);
+}
+END_TEST
+
 Suite*
 test_suite(void)
 {
@@ -183,6 +199,9 @@ test_suite(void)
     tcase_add_test(tc_core, del_then_insert);
     tcase_add_test(tc_core, del_then_insert_large);
     tcase_add_test(tc_core, insert_many_single_chars);
+    tcase_add_test(tc_core, substring_from_beginning);
+    tcase_add_test(tc_core, substring_clamps_at_the_end);
+
     suite_add_tcase(s, tc_core);
     return s;
 }

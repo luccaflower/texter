@@ -30,6 +30,37 @@ Gap_str(struct GapBuffer* gap)
     return buf;
 }
 
+char*
+Gap_substr(struct GapBuffer* gap, int from, int to)
+{
+    if (from >= to || from < 0) {
+        char* buf = Malloc(1);
+        buf[0] = '\0';
+        return buf;
+    }
+    if (to > gap->size) {
+        to = gap->size;
+    }
+    size_t len = to - from;
+    char* buf = Malloc(len + 1);
+    if (from + len <= gap->cur_beg) {
+        memcpy(buf + from, gap->buf, len);
+        buf[len] = '\0';
+        return buf;
+    } else if (from < gap->cur_beg) {
+        memcpy(buf, gap->buf + from, gap->cur_beg - from);
+        memcpy(buf + gap->cur_beg - from,
+               gap->buf + gap->cur_end,
+               len - (gap->cur_beg - from));
+        buf[len] = '\0';
+        return buf;
+    } else {
+        memcpy(buf, gap->buf + gap->cur_end + (from - gap->cur_beg), len);
+        buf[len] = '\0';
+        return buf;
+    }
+}
+
 void
 Gap_insert_str(struct GapBuffer* gap, char* buf)
 {

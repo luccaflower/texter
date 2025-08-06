@@ -16,6 +16,9 @@ Gap_new(char* buf);
 char*
 Gap_str(struct GapBuffer* gap);
 
+char*
+Gap_substr(struct GapBuffer* gap, int from, int to);
+
 void
 Gap_insert_str(struct GapBuffer* gap, char* buf);
 
