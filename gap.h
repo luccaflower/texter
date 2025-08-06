@@ -13,11 +13,11 @@ struct GapBuffer
 struct GapBuffer*
 Gap_new(char* buf);
 
-char*
-Gap_str(struct GapBuffer* gap);
+void
+Gap_str(struct GapBuffer* gap, char* out);
 
-char*
-Gap_substr(struct GapBuffer* gap, int from, int to);
+void
+Gap_substr(struct GapBuffer* gap, int from, int to, char* out);
 
 void
 Gap_insert_str(struct GapBuffer* gap, char* buf);

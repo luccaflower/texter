@@ -7,14 +7,16 @@
 START_TEST(init_empty_gapbuf)
 {
     struct GapBuffer* gap = Gap_new("");
-    char* str = Gap_str(gap);
+    char str[sizeof("")];
+    Gap_str(gap, str);
     ck_assert_str_eq("", str);
 }
 END_TEST
 START_TEST(init_nonempty_gapbuf)
 {
     struct GapBuffer* gap = Gap_new("not empty");
-    char* str = Gap_str(gap);
+    char str[sizeof("not empty")];
+    Gap_str(gap, str);
     ck_assert_str_eq("not empty", str);
 }
 END_TEST
@@ -23,7 +25,9 @@ START_TEST(insert_single_char)
 {
     struct GapBuffer* gap = Gap_new("nsert");
     Gap_insert_str(gap, "i");
-    ck_assert_str_eq("insert", Gap_str(gap));
+    char str[sizeof("insert")];
+    Gap_str(gap, str);
+    ck_assert_str_eq("insert", str);
 }
 END_TEST
 
@@ -31,7 +35,9 @@ START_TEST(insert_some_chars)
 {
     struct GapBuffer* gap = Gap_new("ert");
     Gap_insert_str(gap, "ins");
-    ck_assert_str_eq("insert", Gap_str(gap));
+    char str[sizeof("insert")];
+    Gap_str(gap, str);
+    ck_assert_str_eq("insert", str);
 }
 END_TEST
 
@@ -42,9 +48,11 @@ START_TEST(insert_many_chars)
     char insert[] = "prepend a reasonably long, more than 16 chars ";
     struct GapBuffer* gap = Gap_new(original);
     Gap_insert_str(gap, insert);
+    char str[sizeof("prepend a reasonably long, more than 16 chars string of "
+                    "text")];
+    Gap_str(gap, str);
     ck_assert_str_eq(
-      "prepend a reasonably long, more than 16 chars string of text",
-      Gap_str(gap));
+      "prepend a reasonably long, more than 16 chars string of text", str);
 }
 END_TEST
 
@@ -54,7 +62,9 @@ START_TEST(many_smaller_inserts)
     Gap_insert_str(gap, "insertions ");
     Gap_insert_str(gap, "in front of ");
     Gap_insert_str(gap, "this ");
-    ck_assert_str_eq("insertions in front of this string", Gap_str(gap));
+    char str[sizeof("insertions in front of this string")];
+    Gap_str(gap, str);
+    ck_assert_str_eq("insertions in front of this string", str);
 }
 END_TEST
 
@@ -63,7 +73,9 @@ START_TEST(mov_cursor_then_insert)
     struct GapBuffer* gap = Gap_new("inert");
     Gap_mov(gap, 2);
     Gap_insert_str(gap, "s");
-    ck_assert_str_eq("insert", Gap_str(gap));
+    char str[sizeof("insert")];
+    Gap_str(gap, str);
+    ck_assert_str_eq("insert", str);
 }
 END_TEST
 
@@ -73,7 +85,9 @@ START_TEST(mov_fwd_then_back_then_insert)
     Gap_mov(gap, 10);
     Gap_mov(gap, -3);
     Gap_insert_str(gap, "in ");
-    ck_assert_str_eq("insert in the middle", Gap_str(gap));
+    char str[sizeof("insert in the middle")];
+    Gap_str(gap, str);
+    ck_assert_str_eq("insert in the middle", str);
 }
 END_TEST
 
@@ -82,7 +96,9 @@ START_TEST(clamp_at_the_end)
     struct GapBuffer* gap = Gap_new("begin");
     Gap_mov(gap, 20);
     Gap_insert_str(gap, " end");
-    ck_assert_str_eq("begin end", Gap_str(gap));
+    char str[sizeof("begin end")] = { 0 };
+    Gap_str(gap, str);
+    ck_assert_str_eq("begin end", str);
 }
 END_TEST
 
@@ -91,7 +107,9 @@ START_TEST(clamp_at_beginning)
     struct GapBuffer* gap = Gap_new("end");
     Gap_mov(gap, -20);
     Gap_insert_str(gap, "begin ");
-    ck_assert_str_eq("begin end", Gap_str(gap));
+    char str[sizeof("bein end")];
+    Gap_str(gap, str);
+    ck_assert_str_eq("begin end", str);
 }
 END_TEST
 
@@ -100,7 +118,9 @@ START_TEST(del_char)
     struct GapBuffer* gap = Gap_new("delete.");
     Gap_mov(gap, gap->size - 1);
     Gap_del(gap, 1);
-    ck_assert_str_eq("delete", Gap_str(gap));
+    char str[sizeof("delete")] = { 0 };
+    Gap_str(gap, str);
+    ck_assert_str_eq("delete", str);
 }
 END_TEST
 
@@ -108,7 +128,9 @@ START_TEST(del_empty_is_noop)
 {
     struct GapBuffer* gap = Gap_new("");
     Gap_del(gap, 1);
-    ck_assert_str_eq("", Gap_str(gap));
+    char str[sizeof("")] = { 0 };
+    Gap_str(gap, str);
+    ck_assert_str_eq("", str);
 }
 END_TEST
 
@@ -116,7 +138,9 @@ START_TEST(del_from_start_deletes_first)
 {
     struct GapBuffer* gap = Gap_new("something");
     Gap_del(gap, 1);
-    ck_assert_str_eq("omething", Gap_str(gap));
+    char str[sizeof("omething")] = { 0 };
+    Gap_str(gap, str);
+    ck_assert_str_eq("omething", str);
 }
 END_TEST
 
@@ -124,7 +148,9 @@ START_TEST(del_past_end_clamps_to_end)
 {
     struct GapBuffer* gap = Gap_new("something");
     Gap_del(gap, 20);
-    ck_assert_str_eq("", Gap_str(gap));
+    char str[sizeof("")];
+    Gap_str(gap, str);
+    ck_assert_str_eq("", str);
 }
 END_TEST
 
@@ -134,7 +160,9 @@ START_TEST(del_then_insert)
     Gap_mov(gap, 7);
     Gap_del(gap, 9);
     Gap_insert_str(gap, "nothing");
-    ck_assert_str_eq("delete nothing in here", Gap_str(gap));
+    char str[sizeof("delete nothing in here")] = { 0 };
+    Gap_str(gap, str);
+    ck_assert_str_eq("delete nothing in here", str);
 }
 END_TEST
 
@@ -144,8 +172,9 @@ START_TEST(del_then_insert_large)
     Gap_mov(gap, 7);
     Gap_del(gap, 9);
     Gap_insert_str(gap, "something quite larger than that");
-    ck_assert_str_eq("delete something quite larger than that in here",
-                     Gap_str(gap));
+    char str[sizeof("delete something quite larger than that in here")] = { 0 };
+    Gap_str(gap, str);
+    ck_assert_str_eq("delete something quite larger than that in here", str);
 }
 END_TEST
 
@@ -157,14 +186,17 @@ START_TEST(insert_many_single_chars)
     for (size_t i = 0; i < 32; i++) {
         Gap_insert_chr(gap, c);
     }
-    ck_assert_str_eq("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaend", Gap_str(gap));
+    char str[sizeof("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaend")];
+    Gap_str(gap, str);
+    ck_assert_str_eq("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaend", str);
 }
 END_TEST
 
 START_TEST(substring_from_beginning)
 {
     struct GapBuffer* gap = Gap_new("substring this");
-    char* substr = Gap_substr(gap, 0, 9);
+    char substr[10];
+    Gap_substr(gap, 0, 9, substr);
     ck_assert_str_eq("substring", substr);
 }
 END_TEST
@@ -172,7 +204,8 @@ END_TEST
 START_TEST(substring_clamps_at_the_end)
 {
     struct GapBuffer* gap = Gap_new("substring this");
-    char* substr = Gap_substr(gap, 10, 20);
+    char substr[11];
+    Gap_substr(gap, 10, 20, substr);
     ck_assert_str_eq("this", substr);
 }
 END_TEST

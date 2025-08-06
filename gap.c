@@ -19,45 +19,38 @@ Gap_new(char* buf)
     return gap;
 }
 
-char*
-Gap_str(struct GapBuffer* gap)
+void
+Gap_str(struct GapBuffer* gap, char* out)
 {
-    char* buf = Malloc(gap->size + 1);
-    memcpy(buf, gap->buf, gap->cur_beg);
+    memcpy(out, gap->buf, gap->cur_beg);
     memcpy(
-      &buf[gap->cur_beg], &gap->buf[gap->cur_end], gap->size - gap->cur_beg);
-    buf[gap->size] = '\0';
-    return buf;
+      &out[gap->cur_beg], &gap->buf[gap->cur_end], gap->size - gap->cur_beg);
+    out[gap->size] = '\0';
 }
 
-char*
-Gap_substr(struct GapBuffer* gap, int from, int to)
+void
+Gap_substr(struct GapBuffer* gap, int from, int to, char* buf)
 {
     if (from >= to || from < 0) {
         char* buf = Malloc(1);
         buf[0] = '\0';
-        return buf;
     }
     if (to > gap->size) {
         to = gap->size;
     }
     size_t len = to - from;
-    char* buf = Malloc(len + 1);
     if (from + len <= gap->cur_beg) {
         memcpy(buf + from, gap->buf, len);
         buf[len] = '\0';
-        return buf;
     } else if (from < gap->cur_beg) {
         memcpy(buf, gap->buf + from, gap->cur_beg - from);
         memcpy(buf + gap->cur_beg - from,
                gap->buf + gap->cur_end,
                len - (gap->cur_beg - from));
         buf[len] = '\0';
-        return buf;
     } else {
         memcpy(buf, gap->buf + gap->cur_end + (from - gap->cur_beg), len);
         buf[len] = '\0';
-        return buf;
     }
 }
 

@@ -162,10 +162,11 @@ insert_row(struct EditorContext* ctx, int at, char* s, size_t len)
 }
 
 int
-row_cx_to_rx(struct EdRow* row, int cx)
+row_cx_to_rx(struct EdRow* row, struct BumpAlloc scratch, int cx)
 {
     int rx = 0;
-    char* buf = Gap_substr(row->gap, 0, cx);
+    char* buf = Bump_alloc(&scratch, cx + 1);
+    Gap_substr(row->gap, 0, cx, buf);
     for (int i = 0; i < cx; i++) {
         if (buf[i] == '\t') {
             rx += TABWIDTH - (rx % TABWIDTH);
@@ -173,7 +174,6 @@ row_cx_to_rx(struct EdRow* row, int cx)
             rx++;
         }
     }
-    free(buf);
     return rx;
 }
 
@@ -182,7 +182,7 @@ editor_scroll(struct EditorContext* ctx)
 {
     ctx->rx = 0;
     if (ctx->cy < ctx->n_rows) {
-        ctx->rx = row_cx_to_rx(&ctx->erow[ctx->cy], ctx->cx);
+        ctx->rx = row_cx_to_rx(&ctx->erow[ctx->cy], *ctx->bmp, ctx->cx);
     }
     if (ctx->cy < ctx->row_offset) {
         ctx->row_offset = ctx->cy;
@@ -227,9 +227,13 @@ draw_rows(struct EditorContext* ctx, struct Abuf* ab)
             if (len > ctx->screencols) {
                 len = ctx->screencols;
             }
-            char* to_render = Gap_substr(ctx->erow[filerow].gap,
-                                         ctx->col_offset,
-                                         ctx->col_offset + ctx->screencols);
+            struct BumpAlloc bmp = *ctx->bmp;
+            struct GapBuffer* gap = ctx->erow[filerow].gap;
+            char* to_render = Bump_alloc(&bmp, ctx->screencols + 1);
+            Gap_substr(gap,
+                       ctx->col_offset,
+                       ctx->col_offset + ctx->screencols,
+                       to_render);
             int tabs = 0;
             for (size_t i = 0; to_render[i]; i++) {
                 if (to_render[i] == '\t') {
@@ -238,7 +242,6 @@ draw_rows(struct EditorContext* ctx, struct Abuf* ab)
             }
             int tab_chars = tabs * (TABWIDTH - 1);
             // a render string only needs to live as long as a single interation
-            struct BumpAlloc bmp = *ctx->bmp;
             char* render = Bump_alloc(&bmp, strlen(to_render) + tab_chars + 1);
             int i = 0;
             for (int j = 0; to_render[j]; j++) {
@@ -250,7 +253,6 @@ draw_rows(struct EditorContext* ctx, struct Abuf* ab)
                     i++;
                 }
             }
-            free(to_render);
             Abuf_append(ab, render, i);
         }
         Abuf_append(ab, ERASE_LINE, sizeof(ERASE_LINE));
@@ -381,9 +383,9 @@ save_buf(struct EditorContext* ctx)
     char* p = buf;
     for (int i = 0; i < ctx->n_rows; i++) {
         struct GapBuffer* gap = ctx->erow[i].gap;
-        char* cpy = Gap_str(gap);
+        char* cpy = Bump_alloc(&scratch, gap->size + 1);
+        Gap_str(gap, cpy);
         memcpy(p, cpy, gap->size);
-        free(cpy);
         p += gap->size;
         *p = '\n';
         p++;
@@ -625,17 +627,19 @@ enter_char(struct EditorContext* ctx, char c)
 void
 enter_newline(struct EditorContext* ctx)
 {
+    struct BumpAlloc bmp = *ctx->bmp;
     if (ctx->cx == 0) {
         insert_row(ctx, ctx->cy, "", 0);
     } else {
         struct EdRow* row = &ctx->erow[ctx->cy];
         struct GapBuffer* gap = row->gap;
-        char* buf = Gap_str(gap);
-        insert_row(ctx, ctx->cy + 1, &buf[ctx->cx], gap->size - ctx->cx);
+
+        char* buf = Bump_alloc(&bmp, gap->size - ctx->cx + 1);
+        Gap_substr(gap, ctx->cx, gap->size, buf);
+        insert_row(ctx, ctx->cy + 1, buf, gap->size - ctx->cx);
         Gap_mov(gap, ctx->cx - gap->cur_beg);
         Gap_del(gap, gap->size);
         row = &ctx->erow[ctx->cy];
-        free(buf);
     }
     ctx->cy++;
     ctx->cx = 0;
@@ -657,13 +661,15 @@ del_char(struct EditorContext* ctx)
         ctx->cx--;
         ctx->dirty++;
     } else {
+        struct BumpAlloc scratch = *ctx->bmp;
+        struct GapBuffer* gap = ctx->erow[ctx->cy - 1].gap;
         ctx->cx = ctx->erow[ctx->cy - 1].gap->size;
-        char* buf = Gap_str(row->gap);
+        char* buf = Bump_alloc(&scratch, gap->size + 1);
+        Gap_str(row->gap, buf);
         append_string_to_row(&ctx->erow[ctx->cy - 1], buf, row->gap->size);
         del_row(ctx, ctx->cy);
         ctx->cy--;
         ctx->dirty++;
-        free(buf);
     }
 }
 void
