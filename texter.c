@@ -109,35 +109,6 @@ del_row(struct EditorContext* ctx, int at)
 }
 
 void
-insert_char_into_row(struct GapBuffer* gap, int at, int c)
-{
-    if (at < 0 || at > gap->size) {
-        at = gap->size;
-    }
-
-    Gap_mov(gap, at - gap->cur_beg);
-    Gap_insert_chr(gap, c);
-}
-
-void
-append_string_to_row(struct GapBuffer* gap, char* s, size_t len)
-{
-    Gap_mov(gap, gap->size);
-    Gap_insert_str(gap, s);
-}
-
-void
-del_char_from_row(struct GapBuffer* gap, int at)
-{
-    if (at < 0 || at >= gap->size) {
-        return;
-    }
-
-    Gap_mov(gap, at - gap->cur_beg);
-    Gap_del(gap, 1);
-}
-
-void
 insert_row(struct EditorContext* ctx, int at, char* s, size_t len)
 {
     if (at < 0 || at > ctx->n_rows) {
@@ -557,45 +528,71 @@ handle_cursor_mov(struct EditorContext* ctx, int key)
         case LEFT:
             if (ctx->cx > 0) {
                 ctx->cx--;
+                Gap_mov(ctx->lines[ctx->cy], -1);
             } else if (ctx->cy > 0) {
                 ctx->cy--;
-                ctx->cx = ctx->lines[ctx->cy]->size;
+                struct GapBuffer* gap = ctx->lines[ctx->cy];
+                ctx->cx = gap->size;
+                Gap_mov(gap, gap->size);
             }
             break;
         case RIGHT:
             if (gap && ctx->cx < gap->size) {
                 ctx->cx++;
+                Gap_mov(gap, 1);
             } else if (gap && ctx->cx >= gap->size) {
                 ctx->cy++;
+                struct GapBuffer* gap = ctx->lines[ctx->cy];
+                Gap_mov(gap, -gap->size);
                 ctx->cx = 0;
             }
             break;
         case UP:
             if (ctx->cy > 0) {
                 ctx->cy--;
+                struct GapBuffer* gap = ctx->lines[ctx->cy];
+                Gap_mov(gap, ctx->cx - gap->cur_beg);
             }
             break;
         case DOWN:
             if (ctx->cy < ctx->n_rows) {
                 ctx->cy++;
+                struct GapBuffer* gap = ctx->lines[ctx->cy];
+                Gap_mov(gap, ctx->cx - gap->cur_beg);
             }
             break;
         case HOME:
             ctx->cy = 0;
+            {
+                struct GapBuffer* gap = ctx->lines[ctx->cy];
+                Gap_mov(gap, ctx->cx - gap->cur_beg);
+            }
             break;
         case END:
             ctx->cy = ctx->n_rows - 1;
+            {
+                struct GapBuffer* gap = ctx->lines[ctx->cy];
+                Gap_mov(gap, ctx->cx - gap->cur_beg);
+            }
             break;
         case PG_UP:
             ctx->cy -= ctx->screenrows;
             if (ctx->cy < 0) {
                 ctx->cy = 0;
             }
+            {
+                struct GapBuffer* gap = ctx->lines[ctx->cy];
+                Gap_mov(gap, ctx->cx - gap->cur_beg);
+            }
             break;
         case PG_DWN:
             ctx->cy += ctx->screenrows;
             if (ctx->cy > ctx->n_rows) {
                 ctx->cy = ctx->n_rows;
+            }
+            {
+                struct GapBuffer* gap = ctx->lines[ctx->cy];
+                Gap_mov(gap, ctx->cx - gap->cur_beg);
             }
             break;
     }
@@ -612,7 +609,7 @@ enter_char(struct EditorContext* ctx, char c)
     if (ctx->cy == ctx->n_rows) {
         insert_row(ctx, ctx->n_rows, "", 0);
     }
-    insert_char_into_row(ctx->lines[ctx->cy], ctx->cx, c);
+    Gap_insert_chr(ctx->lines[ctx->cy], c);
     ctx->cx++;
     ctx->dirty++;
 }
@@ -628,7 +625,6 @@ enter_newline(struct EditorContext* ctx)
         char* buf = Bump_alloc(&bmp, gap->size - ctx->cx + 1);
         Gap_substr(gap, ctx->cx, gap->size, buf);
         insert_row(ctx, ctx->cy + 1, buf, gap->size - ctx->cx);
-        Gap_mov(gap, ctx->cx - gap->cur_beg);
         Gap_del(gap, gap->size);
     }
     ctx->cy++;
@@ -647,8 +643,9 @@ del_char(struct EditorContext* ctx)
 
     struct GapBuffer* curr = ctx->lines[ctx->cy];
     if (ctx->cx > 0) {
-        del_char_from_row(curr, ctx->cx - 1);
+        Gap_mov(curr, -1);
         ctx->cx--;
+        Gap_del(curr, 1);
         ctx->dirty++;
     } else {
         struct BumpAlloc scratch = *ctx->bmp;
@@ -656,9 +653,10 @@ del_char(struct EditorContext* ctx)
         ctx->cx = ctx->lines[ctx->cy - 1]->size;
         char* buf = Bump_alloc(&scratch, prev->size + 1);
         Gap_str(curr, buf);
-        append_string_to_row(ctx->lines[ctx->cy - 1], buf, curr->size);
+        Gap_insert_str(curr, buf);
         del_row(ctx, ctx->cy);
         ctx->cy--;
+        Gap_mov(prev, ctx->cx - prev->cur_beg);
         ctx->dirty++;
     }
 }
