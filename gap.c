@@ -1,6 +1,7 @@
 
 #include "gap.h"
 #include "util.h"
+#include <stddef.h>
 #include <string.h>
 #define GAP_SIZE (16)
 
@@ -125,4 +126,47 @@ Gap_del(struct GapBuffer* gap, int steps)
     }
     gap->size -= steps;
     gap->cur_end += steps;
+}
+
+void
+Gap_nextline(struct GapBuffer* gap)
+{
+    size_t xpos = 0;
+    for (size_t i = gap->cur_beg; i && gap->buf[i] != '\n'; i--) {
+        xpos++;
+    }
+    char* endl = strchr(&gap->buf[gap->cur_end], '\n');
+    if (!endl) {
+        Gap_mov(gap, gap->size);
+    } else {
+        char* nendl = strchr(endl + 1, '\n');
+        if (nendl) {
+            // clamp to next endl
+            xpos = nendl - endl < xpos ? nendl - endl : xpos;
+            Gap_mov(gap, nendl - endl + xpos);
+        } else {
+            // past end of line would mean past end of buffer
+            // which is clamped by the Gap_mov implementation
+            Gap_mov(gap, endl - &gap->buf[gap->cur_end] + 1 + xpos);
+        }
+    }
+}
+
+void
+Gap_prevline(struct GapBuffer* gap)
+{
+    size_t xpos = 0;
+    while (gap->cur_beg && gap->buf[gap->cur_beg] != '\n') {
+        Gap_mov(gap, -1);
+        xpos++;
+    }
+    size_t line_len = 0;
+    size_t line_start;
+    for (line_start = gap->cur_beg - 1;
+         line_start && gap->buf[line_start] != '\n';
+         line_start--) {
+        line_len++;
+    }
+    xpos = line_len > xpos ? xpos : line_len;
+    Gap_mov(gap, line_start - gap->cur_beg + xpos - 1);
 }

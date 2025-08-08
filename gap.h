@@ -30,4 +30,10 @@ Gap_mov(struct GapBuffer* gap, int steps);
 
 void
 Gap_del(struct GapBuffer* gap, int chars);
+
+void
+Gap_nextline(struct GapBuffer* gap);
+
+void
+Gap_prevline(struct GapBuffer* gap);
 #endif // !GAP_BUFFER

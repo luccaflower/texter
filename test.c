@@ -210,6 +210,91 @@ START_TEST(substring_clamps_at_the_end)
 }
 END_TEST
 
+START_TEST(nextline_goes_to_the_next_line)
+{
+    struct GapBuffer* gap = Gap_new("next\nline");
+    Gap_nextline(gap);
+    char str[sizeof("line")];
+    Gap_substr(gap, gap->cur_beg, gap->size, str);
+    ck_assert_str_eq("line", str);
+}
+END_TEST
+
+START_TEST(nextline_with_no_next_line_goes_to_end)
+{
+
+    struct GapBuffer* gap = Gap_new("no next line");
+    Gap_nextline(gap);
+    char str[sizeof("")];
+    Gap_substr(gap, gap->cur_beg, gap->size, str);
+    ck_assert_str_eq("", str);
+}
+END_TEST
+
+START_TEST(prevline_goes_to_prev_line)
+{
+
+    struct GapBuffer* gap = Gap_new("prev\nline");
+    Gap_mov(gap, 5);
+    Gap_prevline(gap);
+    char str[sizeof("prev\nline")];
+    Gap_substr(gap, gap->cur_beg, gap->size, str);
+    ck_assert_str_eq("prev\nline", str);
+}
+END_TEST
+
+START_TEST(next_line_preserves_pos_in_line)
+{
+
+    struct GapBuffer* gap = Gap_new("prev\nline");
+    Gap_mov(gap, 2);
+    Gap_nextline(gap);
+    char str[sizeof("ne")];
+    Gap_substr(gap, gap->cur_beg, gap->size, str);
+    ck_assert_str_eq("ne", str);
+}
+END_TEST
+
+START_TEST(next_line_clamps_to_end_of_next)
+{
+
+    struct GapBuffer* gap = Gap_new("longer than\nnext\nline");
+    Gap_mov(gap, 6);
+    Gap_nextline(gap);
+    char str[sizeof("\nline")];
+    Gap_substr(gap, gap->cur_beg, gap->size, str);
+    ck_assert_str_eq("\nline", str);
+}
+END_TEST
+START_TEST(prev_line_preserves_pos)
+{
+
+    struct GapBuffer* gap = Gap_new("prev\nline");
+    Gap_mov(gap, 7);
+    Gap_prevline(gap);
+    char str[sizeof("ev\nline")];
+    Gap_substr(gap, gap->cur_beg, gap->size, str);
+    ck_assert_str_eq("ev\nline", str);
+}
+END_TEST
+
+START_TEST(next_line_at_end_stays_at_end)
+{
+    struct GapBuffer* gap = Gap_new("gap buffer\nwith several\nlines");
+    Gap_mov(gap, gap->size);
+    Gap_nextline(gap);
+    ck_assert(gap->cur_beg == gap->size);
+}
+END_TEST
+
+START_TEST(prev_line_at_beginning_stays_at_beginning)
+{
+    struct GapBuffer* gap = Gap_new("gap buffer\nwith several\nlines");
+    Gap_prevline(gap);
+    ck_assert(gap->cur_beg == 0);
+}
+END_TEST
+
 Suite*
 test_suite(void)
 {
@@ -234,6 +319,14 @@ test_suite(void)
     tcase_add_test(tc_core, insert_many_single_chars);
     tcase_add_test(tc_core, substring_from_beginning);
     tcase_add_test(tc_core, substring_clamps_at_the_end);
+    tcase_add_test(tc_core, nextline_goes_to_the_next_line);
+    tcase_add_test(tc_core, nextline_with_no_next_line_goes_to_end);
+    tcase_add_test(tc_core, prevline_goes_to_prev_line);
+    tcase_add_test(tc_core, next_line_preserves_pos_in_line);
+    tcase_add_test(tc_core, next_line_clamps_to_end_of_next);
+    tcase_add_test(tc_core, prev_line_preserves_pos);
+    tcase_add_test(tc_core, next_line_at_end_stays_at_end);
+    tcase_add_test(tc_core, prev_line_at_beginning_stays_at_beginning);
 
     suite_add_tcase(s, tc_core);
     return s;
