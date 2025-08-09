@@ -136,14 +136,12 @@ Gap_nextline(struct GapBuffer* gap)
         xpos++;
     }
     char* endl = strchr(&gap->buf[gap->cur_end], '\n');
-    if (!endl) {
-        Gap_mov(gap, gap->size);
-    } else {
+    if (endl) {
         char* nendl = strchr(endl + 1, '\n');
         if (nendl) {
             // clamp to next endl
-            xpos = nendl - endl < xpos ? nendl - endl : xpos;
-            Gap_mov(gap, nendl - endl + xpos);
+            xpos = nendl - endl - 1 < xpos ? nendl - endl - 1 : xpos;
+            Gap_mov(gap, endl - &gap->buf[gap->cur_end] + 1 + xpos);
         } else {
             // past end of line would mean past end of buffer
             // which is clamped by the Gap_mov implementation

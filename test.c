@@ -214,20 +214,16 @@ START_TEST(nextline_goes_to_the_next_line)
 {
     struct GapBuffer* gap = Gap_new("next\nline");
     Gap_nextline(gap);
-    char str[sizeof("line")];
-    Gap_substr(gap, gap->cur_beg, gap->size, str);
-    ck_assert_str_eq("line", str);
+    ck_assert_str_eq("line", &gap->buf[gap->cur_end]);
 }
 END_TEST
 
-START_TEST(nextline_with_no_next_line_goes_to_end)
+START_TEST(nextline_with_no_next_line_is_noop)
 {
 
     struct GapBuffer* gap = Gap_new("no next line");
     Gap_nextline(gap);
-    char str[sizeof("")];
-    Gap_substr(gap, gap->cur_beg, gap->size, str);
-    ck_assert_str_eq("", str);
+    ck_assert_str_eq("no next line", &gap->buf[gap->cur_end]);
 }
 END_TEST
 
@@ -237,9 +233,7 @@ START_TEST(prevline_goes_to_prev_line)
     struct GapBuffer* gap = Gap_new("prev\nline");
     Gap_mov(gap, 5);
     Gap_prevline(gap);
-    char str[sizeof("prev\nline")];
-    Gap_substr(gap, gap->cur_beg, gap->size, str);
-    ck_assert_str_eq("prev\nline", str);
+    ck_assert_str_eq("prev\nline", &gap->buf[gap->cur_end]);
 }
 END_TEST
 
@@ -249,9 +243,7 @@ START_TEST(next_line_preserves_pos_in_line)
     struct GapBuffer* gap = Gap_new("prev\nline");
     Gap_mov(gap, 2);
     Gap_nextline(gap);
-    char str[sizeof("ne")];
-    Gap_substr(gap, gap->cur_beg, gap->size, str);
-    ck_assert_str_eq("ne", str);
+    ck_assert_str_eq("ne", &gap->buf[gap->cur_end]);
 }
 END_TEST
 
@@ -259,11 +251,9 @@ START_TEST(next_line_clamps_to_end_of_next)
 {
 
     struct GapBuffer* gap = Gap_new("longer than\nnext\nline");
-    Gap_mov(gap, 6);
+    Gap_mov(gap, 8);
     Gap_nextline(gap);
-    char str[sizeof("\nline")];
-    Gap_substr(gap, gap->cur_beg, gap->size, str);
-    ck_assert_str_eq("\nline", str);
+    ck_assert_str_eq("\nline", &gap->buf[gap->cur_end]);
 }
 END_TEST
 START_TEST(prev_line_preserves_pos)
@@ -295,6 +285,33 @@ START_TEST(prev_line_at_beginning_stays_at_beginning)
 }
 END_TEST
 
+START_TEST(nextline_with_new_line_after_next)
+{
+    struct GapBuffer* gap = Gap_new("1111111\n22\n222");
+    Gap_nextline(gap);
+    ck_assert_str_eq("22\n222", &gap->buf[gap->cur_end]);
+}
+
+START_TEST(delete_newline)
+{
+    struct GapBuffer* gap = Gap_new("1111111\n22\n222");
+    Gap_nextline(gap);
+    Gap_mov(gap, -1);
+    Gap_del(gap, 1);
+    char str[sizeof("111111122\n222")];
+    Gap_str(gap, str);
+    ck_assert_str_eq("111111122\n222", str);
+}
+START_TEST(delete_then_mov)
+{
+    struct GapBuffer* gap = Gap_new("1111111\n22\n222");
+    Gap_nextline(gap);
+    Gap_mov(gap, -1);
+    Gap_del(gap, 1);
+    Gap_mov(gap, -3);
+    ck_assert_str_eq("11122\n222", &gap->buf[gap->cur_end]);
+}
+
 Suite*
 test_suite(void)
 {
@@ -320,13 +337,16 @@ test_suite(void)
     tcase_add_test(tc_core, substring_from_beginning);
     tcase_add_test(tc_core, substring_clamps_at_the_end);
     tcase_add_test(tc_core, nextline_goes_to_the_next_line);
-    tcase_add_test(tc_core, nextline_with_no_next_line_goes_to_end);
+    tcase_add_test(tc_core, nextline_with_no_next_line_is_noop);
     tcase_add_test(tc_core, prevline_goes_to_prev_line);
     tcase_add_test(tc_core, next_line_preserves_pos_in_line);
     tcase_add_test(tc_core, next_line_clamps_to_end_of_next);
     tcase_add_test(tc_core, prev_line_preserves_pos);
     tcase_add_test(tc_core, next_line_at_end_stays_at_end);
     tcase_add_test(tc_core, prev_line_at_beginning_stays_at_beginning);
+    tcase_add_test(tc_core, nextline_with_new_line_after_next);
+    tcase_add_test(tc_core, delete_newline);
+    tcase_add_test(tc_core, delete_then_mov);
 
     suite_add_tcase(s, tc_core);
     return s;

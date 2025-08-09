@@ -668,11 +668,14 @@ del_char(struct EditorContext* ctx)
 
     struct GapBuffer* curr = ctx->lines[ctx->cy];
     if (ctx->cx > 0) {
-        Gap_mov(curr, -1);
         ctx->cx--;
         Gap_del(curr, 1);
+        Gap_del(ctx->buf, 1);
         ctx->dirty++;
     } else {
+        if (ctx->cy > 1) {
+            Gap_del(ctx->buf, 1);
+        }
         struct BumpAlloc scratch = *ctx->bmp;
         struct GapBuffer* prev = ctx->lines[ctx->cy - 1];
         ctx->cx = ctx->lines[ctx->cy - 1]->size;
@@ -707,11 +710,11 @@ handle_input(struct EditorContext* ctx, char c)
         case CTRL_KEY('s'):
             save_buf(ctx);
             break;
-        case DEL:
-            handle_cursor_mov(ctx, RIGHT);
-            // fall through
         case BACKSPACE:
         case CTRL_KEY('h'):
+            handle_cursor_mov(ctx, LEFT);
+            // fall through
+        case DEL:
             del_char(ctx);
             break;
         case CTRL_KEY('q'):

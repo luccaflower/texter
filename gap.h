@@ -36,4 +36,7 @@ Gap_nextline(struct GapBuffer* gap);
 
 void
 Gap_prevline(struct GapBuffer* gap);
+
+void
+Gap_window(struct GapBuffer* gap, int back, int front, int width, char* window);
 #endif // !GAP_BUFFER
