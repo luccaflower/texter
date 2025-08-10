@@ -9,7 +9,7 @@ struct BumpAlloc
 {
     size_t max;
     size_t allocated;
-    void* brk;
+    char* brk;
 };
 
 struct BumpAlloc*
@@ -26,7 +26,7 @@ struct MemoryPool
     size_t max_count;
     size_t allocated;
     size_t block_size;
-    void* brk;
+    char* brk;
     struct PoolFreeList* freelist;
 };
 struct MemoryPool*
