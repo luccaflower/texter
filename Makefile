@@ -1,12 +1,13 @@
 CFLAGS= -O0 -g -Wall -Werror
 TEST = test
-PROG = texter
-OBJ =  	  util.o \
+PROG = main
+OBJ =  	  texter.o \
+	  util.o \
 	  mem.o \
 	  abuf.o \
 	  gap.o
 
-$(PROG): $(PROG).o $(OBJ)
+texter: $(PROG).o $(OBJ)
 
 $(TEST): LDLIBS += -lcheck
 $(TEST): $(TEST).o $(OBJ)

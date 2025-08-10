@@ -1,3 +1,4 @@
+#include "texter.h"
 #include "abuf.h"
 #include "gap.h"
 #include "mem.h"
@@ -25,54 +26,9 @@
 #define ERASE_LINE ("\x1b[K")
 #define TABWIDTH (4)
 
-struct GlobalState
-{
-    struct termios orig_termios;
-};
-
-static struct GlobalState G;
-
-struct EditorContext
-{
-    struct BumpAlloc* bmp;
-    int cx, cy;
-    int rx;
-    int row_offset, col_offset;
-    int screenrows;
-    int screencols;
-    int n_rows;
-    int dirty;
-    char status_msg[80];
-    time_t status_time;
-    struct GapBuffer* buf;
-    struct GapBuffer** lines;
-    char* filename;
-    struct Abuf* ab;
-};
-
 char*
 prompt(struct EditorContext* ctx, char* prompt);
 
-/**** terminal *****/
-
-void
-disable_raw_mode(void)
-{
-    Tcsetattr(STDIN_FILENO, TCSAFLUSH, &G.orig_termios);
-}
-
-void
-enable_raw_mode(void)
-{
-    struct termios raw;
-    Tcgetattr(STDIN_FILENO, &G.orig_termios);
-    cfmakeraw(&raw);
-    raw.c_cc[VMIN] = 0;
-    raw.c_cc[VTIME] = 1;
-    Tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
-}
-
-/***** ui ******/
 int
 window_size(int* rows, int* cols)
 {
@@ -391,7 +347,7 @@ file_open(struct EditorContext* ctx, struct BumpAlloc* arena, char* filename)
         }
         insert_row(ctx, ctx->n_rows, line, line_len);
     }
-    ctx->buf = buf;
+    ctx->gap = buf;
     Gap_mov(buf, -buf->size);
     ctx->dirty = 0;
 }
@@ -531,7 +487,7 @@ handle_cursor_mov(struct EditorContext* ctx, int key)
       (ctx->cy >= ctx->n_rows) ? NULL : ctx->lines[ctx->cy];
     switch (key) {
         case LEFT:
-            Gap_mov(ctx->buf, -1);
+            Gap_mov(ctx->gap, -1);
             if (gap && ctx->cx > 0) {
                 ctx->cx--;
                 Gap_mov(gap, -1);
@@ -543,7 +499,7 @@ handle_cursor_mov(struct EditorContext* ctx, int key)
             }
             break;
         case RIGHT:
-            Gap_mov(ctx->buf, +1);
+            Gap_mov(ctx->gap, +1);
             if (gap && ctx->cx < gap->size) {
                 ctx->cx++;
                 Gap_mov(gap, 1);
@@ -562,7 +518,7 @@ handle_cursor_mov(struct EditorContext* ctx, int key)
                 struct GapBuffer* prev = ctx->lines[ctx->cy];
                 Gap_mov(prev, ctx->cx - prev->cur_beg);
             }
-            Gap_prevline(ctx->buf);
+            Gap_prevline(ctx->gap);
             break;
         case DOWN:
             if (ctx->cy < ctx->n_rows) {
@@ -574,7 +530,7 @@ handle_cursor_mov(struct EditorContext* ctx, int key)
                     ctx->cx = 0;
                 }
             }
-            Gap_nextline(ctx->buf);
+            Gap_nextline(ctx->gap);
             break;
         case HOME:
             ctx->cy = 0;
@@ -582,7 +538,7 @@ handle_cursor_mov(struct EditorContext* ctx, int key)
                 struct GapBuffer* first = ctx->lines[ctx->cy];
                 Gap_mov(first, ctx->cx - first->cur_beg);
             }
-            Gap_mov(ctx->buf, -ctx->buf->size);
+            Gap_mov(ctx->gap, -ctx->gap->size);
             break;
         case END:
             ctx->cy = ctx->n_rows - 1;
@@ -590,7 +546,7 @@ handle_cursor_mov(struct EditorContext* ctx, int key)
                 struct GapBuffer* last = ctx->lines[ctx->cy];
                 Gap_mov(last, ctx->cx - last->cur_beg);
             }
-            Gap_mov(ctx->buf, ctx->buf->size);
+            Gap_mov(ctx->gap, ctx->gap->size);
             break;
         case PG_UP:
             ctx->cy -= ctx->screenrows;
@@ -602,7 +558,7 @@ handle_cursor_mov(struct EditorContext* ctx, int key)
                 Gap_mov(up, ctx->cx - up->cur_beg);
             }
             for (size_t i = 0; i < ctx->screenrows; i++) {
-                Gap_prevline(ctx->buf);
+                Gap_prevline(ctx->gap);
             }
             break;
         case PG_DWN:
@@ -615,7 +571,7 @@ handle_cursor_mov(struct EditorContext* ctx, int key)
                 Gap_mov(down, ctx->cx - down->cur_beg);
             }
             for (size_t i = 0; i < ctx->screenrows; i++) {
-                Gap_nextline(ctx->buf);
+                Gap_nextline(ctx->gap);
             }
             break;
     }
@@ -633,7 +589,7 @@ enter_char(struct EditorContext* ctx, char c)
         insert_row(ctx, ctx->n_rows, "", 0);
     }
     Gap_insert_chr(ctx->lines[ctx->cy], c);
-    Gap_insert_chr(ctx->buf, c);
+    Gap_insert_chr(ctx->gap, c);
     ctx->cx++;
     ctx->dirty++;
 }
@@ -651,7 +607,7 @@ enter_newline(struct EditorContext* ctx)
         insert_row(ctx, ctx->cy + 1, buf, gap->size - ctx->cx);
         Gap_del(gap, gap->size);
     }
-    Gap_insert_chr(ctx->buf, '\n');
+    Gap_insert_chr(ctx->gap, '\n');
     ctx->cy++;
     ctx->cx = 0;
 }
@@ -662,7 +618,7 @@ del_char(struct EditorContext* ctx)
     if (ctx->cy == ctx->n_rows) {
         return;
     }
-    if (ctx->buf->cur_beg == ctx->buf->size) {
+    if (ctx->gap->cur_beg == ctx->gap->size) {
         return;
     }
 
@@ -671,11 +627,11 @@ del_char(struct EditorContext* ctx)
         return;
     } else if (ctx->cx < curr->size) {
         Gap_del(curr, 1);
-        Gap_del(ctx->buf, 1);
+        Gap_del(ctx->gap, 1);
         ctx->dirty++;
     } else {
         if (ctx->cy > 1) {
-            Gap_del(ctx->buf, 1);
+            Gap_del(ctx->gap, 1);
         }
         struct BumpAlloc scratch = *ctx->bmp;
         struct GapBuffer* next = ctx->lines[ctx->cy + 1];
@@ -728,29 +684,4 @@ handle_input(struct EditorContext* ctx, char c)
             enter_char(ctx, c);
             break;
     }
-}
-
-/***** main *****/
-int
-main(int argc, char* argv[])
-{
-    struct BumpAlloc* bmp = Bump_new(MEGABYTES((size_t)2));
-    struct EditorContext* ctx = Bump_alloc(bmp, sizeof(*ctx));
-    enable_raw_mode();
-    atexit(disable_raw_mode);
-    // argv is a NULL-terminated array, so this is fine
-    init_editor(ctx, argv[1], bmp);
-    if (argc > 1) {
-        file_open(ctx, bmp, argv[1]);
-    } else {
-        ctx->buf = Gap_new("");
-    }
-    set_status(ctx, "HELP: Ctrl-S to save | Ctrl-Q to quit");
-
-    while (1) {
-        refresh_ui(ctx);
-        char c = read_input();
-        handle_input(ctx, c);
-    }
-    return EXIT_SUCCESS;
 }
