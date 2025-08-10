@@ -312,6 +312,15 @@ START_TEST(delete_then_mov)
     ck_assert_str_eq("11122\n222", &gap->buf[gap->cur_end]);
 }
 
+START_TEST(failing_case)
+{
+    struct GapBuffer* gap = Gap_new("111\n\n1\n11");
+    Gap_nextline(gap);
+    Gap_nextline(gap);
+    Gap_nextline(gap);
+    ck_assert_str_eq("11", &gap->buf[gap->cur_end]);
+}
+
 Suite*
 test_suite(void)
 {
@@ -347,6 +356,7 @@ test_suite(void)
     tcase_add_test(tc_core, nextline_with_new_line_after_next);
     tcase_add_test(tc_core, delete_newline);
     tcase_add_test(tc_core, delete_then_mov);
+    tcase_add_test(tc_core, failing_case);
 
     suite_add_tcase(s, tc_core);
     return s;

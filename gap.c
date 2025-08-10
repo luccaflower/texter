@@ -132,9 +132,12 @@ void
 Gap_nextline(struct GapBuffer* gap)
 {
     size_t xpos = 0;
-    for (size_t i = gap->cur_beg; i && gap->buf[i] != '\n'; i--) {
-        xpos++;
+    if (gap->cur_beg) {
+        for (size_t i = gap->cur_beg - 1; i && gap->buf[i] != '\n'; i--) {
+            xpos++;
+        }
     }
+
     char* endl = strchr(&gap->buf[gap->cur_end], '\n');
     if (endl) {
         char* nendl = strchr(endl + 1, '\n');
