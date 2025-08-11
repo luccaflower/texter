@@ -30,14 +30,14 @@ char*
 prompt(struct EditorContext* ctx, char* prompt);
 
 int
-window_size(int* rows, int* cols)
+window_size(ssize_t* rows, ssize_t* cols)
 {
     const char* lines = getenv("LINES");
     const char* columns = getenv("COLUMNS");
     int advance;
     if (lines && columns) {
-        sscanf(lines, "%d%n", rows, &advance);
-        sscanf(columns, "%d%n", cols, &advance);
+        sscanf(lines, "%zd%n", rows, &advance);
+        sscanf(columns, "%zd%n", cols, &advance);
         return 0;
     } else {
         struct winsize ws;
@@ -52,9 +52,9 @@ window_size(int* rows, int* cols)
 }
 
 void
-del_row(struct EditorContext* ctx, int at)
+del_row(struct EditorContext* ctx, unsigned at)
 {
-    if (at < 0 || at >= ctx->n_rows) {
+    if (at >= ctx->n_rows) {
         return;
     }
     free(ctx->lines[at]);
@@ -66,9 +66,9 @@ del_row(struct EditorContext* ctx, int at)
 }
 
 void
-insert_row(struct EditorContext* ctx, int at, char* s, size_t len)
+insert_row(struct EditorContext* ctx, unsigned at, char* s)
 {
-    if (at < 0 || at > ctx->n_rows) {
+    if (at > ctx->n_rows) {
         return;
     }
     ctx->lines = Realloc(ctx->lines, sizeof(*ctx->lines) * (ctx->n_rows + 1));
@@ -120,7 +120,7 @@ void
 draw_rows(struct EditorContext* ctx, struct Abuf* ab)
 {
     for (unsigned y = 0; y < ctx->screenrows; y++) {
-        int filerow = y + ctx->row_offset;
+        unsigned filerow = y + ctx->row_offset;
         if (filerow >= ctx->n_rows) {
             if (ctx->n_rows == 0 && y == (ctx->screenrows / 3)) {
                 const char welcome[] =
@@ -142,9 +142,11 @@ draw_rows(struct EditorContext* ctx, struct Abuf* ab)
         } else {
             struct BumpAlloc bmp = *ctx->bmp;
             struct GapBuffer* gap = ctx->lines[filerow];
-            int len = gap->size - ctx->col_offset;
-            if (len < 0) {
+            unsigned len = gap->size - ctx->col_offset;
+            if (gap->size < ctx->col_offset) {
                 len = 0;
+            } else {
+                len = gap->size - ctx->col_offset;
             }
             if (len > ctx->screencols) {
                 len = ctx->screencols;
@@ -183,10 +185,10 @@ draw_rows(struct EditorContext* ctx, struct Abuf* ab)
 void
 place_cursor(struct EditorContext* ctx, struct Abuf* ab)
 {
-    char buf[32];
+    char buf[64];
     snprintf(buf,
              sizeof(buf),
-             "\x1b[%d;%dH",
+             "\x1b[%zd;%zdH",
              (ctx->cy - ctx->row_offset) + 1,
              (ctx->rx - ctx->col_offset) + 1);
     Abuf_append(ab, buf, strlen(buf));
@@ -198,14 +200,14 @@ draw_status_bar(struct EditorContext* ctx, struct Abuf* ab)
     Abuf_append(ab, "\x1b[7m", 4);
     char status[80], rstatus[80];
     char* filename = ctx->filename ? ctx->filename : "[No Name]";
-    int len = snprintf(status,
-                       sizeof(status),
-                       "%.20s - %d lines %s",
-                       filename,
-                       ctx->n_rows,
-                       ctx->dirty ? "(modified)" : "");
-    int rlen =
-      snprintf(rstatus, sizeof(rstatus), "%d/%d", ctx->cy + 1, ctx->n_rows);
+    unsigned len = snprintf(status,
+                            sizeof(status),
+                            "%.20s - %zd lines %s",
+                            filename,
+                            ctx->n_rows,
+                            ctx->dirty ? "(modified)" : "");
+    unsigned rlen =
+      snprintf(rstatus, sizeof(rstatus), "%zd/%zd", ctx->cy + 1, ctx->n_rows);
     if (len > ctx->screencols) {
         len = ctx->screencols;
     }
@@ -225,7 +227,7 @@ void
 draw_status_msg(struct EditorContext* ctx, struct Abuf* ab)
 {
     Abuf_append(ab, "\x1b[K", 3);
-    int msglen = strlen(ctx->status_msg);
+    unsigned msglen = strlen(ctx->status_msg);
     if (msglen > ctx->screencols) {
         msglen = ctx->screencols;
     }
@@ -295,13 +297,13 @@ save_buf(struct EditorContext* ctx)
     }
 
     int totlen = 0;
-    for (int i = 0; i < ctx->n_rows; i++) {
+    for (unsigned i = 0; i < ctx->n_rows; i++) {
         totlen += ctx->lines[i]->size + 1;
     }
     int len = totlen;
     char* buf = Bump_alloc(&scratch, totlen);
     char* p = buf;
-    for (int i = 0; i < ctx->n_rows; i++) {
+    for (unsigned i = 0; i < ctx->n_rows; i++) {
         struct GapBuffer* gap = ctx->lines[i];
         char* cpy = Bump_alloc(&scratch, gap->size + 1);
         Gap_str(gap, cpy);
@@ -328,7 +330,7 @@ save_buf(struct EditorContext* ctx)
 }
 
 void
-file_open(struct EditorContext* ctx, struct BumpAlloc* arena, char* filename)
+file_open(struct EditorContext* ctx, char* filename)
 {
     FILE* fd = fopen(filename, "r");
     if (!fd) {
@@ -336,7 +338,7 @@ file_open(struct EditorContext* ctx, struct BumpAlloc* arena, char* filename)
     }
     char* line = NULL;
     size_t line_cap = 0;
-    size_t line_len;
+    int line_len;
     struct GapBuffer* buf = Gap_new("");
     while ((line_len = getline(&line, &line_cap, fd)) != -1) {
         Gap_insert_str(buf, line);
@@ -345,7 +347,7 @@ file_open(struct EditorContext* ctx, struct BumpAlloc* arena, char* filename)
             line_len--;
             line[line_len] = '\0';
         }
-        insert_row(ctx, ctx->n_rows, line, line_len);
+        insert_row(ctx, ctx->n_rows, line);
     }
     ctx->gap = buf;
     Gap_mov(buf, -buf->size);
@@ -534,10 +536,8 @@ handle_cursor_mov(struct EditorContext* ctx, int key)
             break;
         case HOME:
             ctx->cy = 0;
-            {
-                struct GapBuffer* first = ctx->lines[ctx->cy];
-                Gap_mov(first, ctx->cx - first->cur_beg);
-            }
+            struct GapBuffer* first = ctx->lines[ctx->cy];
+            Gap_mov(first, ctx->cx - first->cur_beg);
             Gap_mov(ctx->gap, -ctx->gap->size);
             break;
         case END:
@@ -549,15 +549,14 @@ handle_cursor_mov(struct EditorContext* ctx, int key)
             Gap_mov(ctx->gap, ctx->gap->size);
             break;
         case PG_UP:
-            ctx->cy -= ctx->screenrows;
-            if (ctx->cy < 0) {
+            if (ctx->cy < ctx->screenrows) {
                 ctx->cy = 0;
+            } else {
+                ctx->cy -= ctx->screenrows;
             }
-            {
-                struct GapBuffer* up = ctx->lines[ctx->cy];
-                Gap_mov(up, ctx->cx - up->cur_beg);
-            }
-            for (size_t i = 0; i < ctx->screenrows; i++) {
+            struct GapBuffer* up = ctx->lines[ctx->cy];
+            Gap_mov(up, ctx->cx - up->cur_beg);
+            for (ssize_t i = 0; i < ctx->screenrows; i++) {
                 Gap_prevline(ctx->gap);
             }
             break;
@@ -570,13 +569,13 @@ handle_cursor_mov(struct EditorContext* ctx, int key)
                 struct GapBuffer* down = ctx->lines[ctx->cy];
                 Gap_mov(down, ctx->cx - down->cur_beg);
             }
-            for (size_t i = 0; i < ctx->screenrows; i++) {
+            for (ssize_t i = 0; i < ctx->screenrows; i++) {
                 Gap_nextline(ctx->gap);
             }
             break;
     }
     gap = (ctx->cy >= ctx->n_rows) ? NULL : ctx->lines[ctx->cy];
-    int rowlen = gap ? gap->size : 0;
+    unsigned rowlen = gap ? gap->size : 0;
     if (ctx->cx > rowlen) {
         ctx->cx = rowlen;
     }
@@ -586,7 +585,7 @@ void
 enter_char(struct EditorContext* ctx, char c)
 {
     if (ctx->cy == ctx->n_rows) {
-        insert_row(ctx, ctx->n_rows, "", 0);
+        insert_row(ctx, ctx->n_rows, "");
     }
     Gap_insert_chr(ctx->lines[ctx->cy], c);
     Gap_insert_chr(ctx->gap, c);
@@ -599,12 +598,12 @@ enter_newline(struct EditorContext* ctx)
 {
     struct BumpAlloc scratch = *ctx->bmp;
     if (ctx->cx == 0) {
-        insert_row(ctx, ctx->cy, "", 0);
+        insert_row(ctx, ctx->cy, "");
     } else {
         struct GapBuffer* gap = ctx->lines[ctx->cy];
         char* buf = Bump_alloc(&scratch, gap->size - ctx->cx + 1);
         Gap_substr(gap, ctx->cx, gap->size, buf);
-        insert_row(ctx, ctx->cy + 1, buf, gap->size - ctx->cx);
+        insert_row(ctx, ctx->cy + 1, buf);
         Gap_del(gap, gap->size);
     }
     Gap_insert_chr(ctx->gap, '\n');

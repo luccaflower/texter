@@ -4,9 +4,9 @@
 
 struct GapBuffer
 {
-    size_t size;
-    size_t cur_beg;
-    size_t cur_end;
+    ssize_t size;
+    ssize_t cur_beg;
+    ssize_t cur_end;
     char* buf;
 };
 

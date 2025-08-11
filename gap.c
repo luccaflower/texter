@@ -39,7 +39,7 @@ Gap_substr(struct GapBuffer* gap, int from, int to, char* buf)
     if (to > gap->size) {
         to = gap->size;
     }
-    size_t len = to - from;
+    ssize_t len = to - from;
     if (from + len <= gap->cur_beg) {
         memcpy(buf, gap->buf + from, len);
         buf[len] = '\0';
@@ -131,7 +131,7 @@ Gap_del(struct GapBuffer* gap, int steps)
 void
 Gap_nextline(struct GapBuffer* gap)
 {
-    size_t xpos = 0;
+    ssize_t xpos = 0;
     if (gap->cur_beg) {
         for (size_t i = gap->cur_beg - 1; i && gap->buf[i] != '\n'; i--) {
             xpos++;

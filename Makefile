@@ -1,4 +1,4 @@
-CFLAGS= -O0 -g -Wall -Wpedantic -Werror
+CFLAGS= -O0 -g -Wall -Wextra -Werror
 TEST = test
 PROG = main
 OBJ =  	  texter.o \

@@ -363,7 +363,7 @@ test_suite(void)
 }
 
 int
-main(int argc, char* argv[])
+main(void)
 {
     int failed;
     Suite* s = test_suite();

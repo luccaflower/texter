@@ -1,16 +1,17 @@
 #ifndef EDITOR
 #define EDITOR
 
+#include <sys/types.h>
 #include <time.h>
 struct EditorContext
 {
     struct BumpAlloc* bmp;
-    int cx, cy;
-    int rx;
-    int row_offset, col_offset;
-    int screenrows;
-    int screencols;
-    int n_rows;
+    ssize_t cx, cy;
+    ssize_t rx;
+    ssize_t row_offset, col_offset;
+    ssize_t screenrows;
+    ssize_t screencols;
+    ssize_t n_rows;
     int dirty;
     char status_msg[80];
     time_t status_time;
@@ -23,7 +24,7 @@ struct EditorContext
 void
 init_editor(struct EditorContext* ctx, char* filename, struct BumpAlloc* bmp);
 void
-file_open(struct EditorContext* ctx, struct BumpAlloc* arena, char* filename);
+file_open(struct EditorContext* ctx, char* filename);
 void
 set_status(struct EditorContext* ctx, const char* fmt, ...);
 void

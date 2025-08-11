@@ -12,7 +12,7 @@ unix_error(const char* msg)
 void
 Tcgetattr(int __fd, struct termios* tios)
 {
-    if (tcgetattr(STDIN_FILENO, tios) < 0) {
+    if (tcgetattr(__fd, tios) < 0) {
         unix_error("tcgetattr");
     }
 }
@@ -21,7 +21,7 @@ void
 Tcsetattr(int __fd, int optional, struct termios* tios)
 {
 
-    if (tcsetattr(STDIN_FILENO, optional, tios) < 0) {
+    if (tcsetattr(__fd, optional, tios) < 0) {
         unix_error("tcsetattr");
     }
 }

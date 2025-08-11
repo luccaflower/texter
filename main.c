@@ -39,7 +39,7 @@ main(int argc, char* argv[])
     // argv is a NULL-terminated array, so this is fine
     init_editor(ctx, argv[1], bmp);
     if (argc > 1) {
-        file_open(ctx, bmp, argv[1]);
+        file_open(ctx, argv[1]);
     } else {
         ctx->gap = Gap_new("");
     }
